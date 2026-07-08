@@ -96,7 +96,7 @@ export function TaskDocuments({
             onChange={(e) => setSelectedDoc(e.target.value)}
           />
           {error && (
-            <div className="rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-4 py-3 text-sm text-red-700">
+            <div className="rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-3 text-sm text-[var(--color-danger-text)]">
               {error}
             </div>
           )}

@@ -36,27 +36,27 @@ export async function updateOrganizationAction(formData: FormData): Promise<Acti
 
   if (!user) return { success: false, error: 'Not authenticated' };
 
-  // Verify admin role
+  // Verify partner role
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role, organization_id')
+    .select('role, firm_id')
     .eq('id', user.id)
     .single();
 
-  if (!profile || profile.role !== 'admin') {
-    return { success: false, error: 'Only admins can update organization settings.' };
+  if (!profile || profile.role !== 'partner') {
+    return { success: false, error: 'Only partners can update firm settings.' };
   }
 
   const name = (formData.get('orgName') as string)?.trim();
 
   if (!name) {
-    return { success: false, error: 'Organization name is required.' };
+    return { success: false, error: 'Firm name is required.' };
   }
 
   const { error } = await supabase
-    .from('organizations')
+    .from('firms')
     .update({ name })
-    .eq('id', profile.organization_id);
+    .eq('id', profile.firm_id);
 
   if (error) {
     return { success: false, error: error.message };

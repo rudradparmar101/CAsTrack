@@ -11,16 +11,16 @@ import {
 import type { Notification, NotificationType } from '@/lib/types';
 
 const typeConfig: Record<NotificationType, { icon: React.ElementType; color: string }> = {
-  task_assigned: { icon: UserPlus, color: 'text-[var(--color-primary)]' },
-  comment_added: { icon: MessageSquare, color: 'text-blue-500' },
-  mentioned_in_comment: { icon: MessageSquare, color: 'text-blue-500' },
+  task_assigned: { icon: UserPlus, color: 'text-[var(--color-accent)]' },
+  comment_added: { icon: MessageSquare, color: 'text-[var(--color-info)]' },
+  mentioned_in_comment: { icon: MessageSquare, color: 'text-[var(--color-info)]' },
   due_date_approaching: { icon: AlertTriangle, color: 'text-[var(--color-warning)]' },
   task_overdue: { icon: AlertTriangle, color: 'text-[var(--color-danger)]' },
   task_completed: { icon: CheckCircle2, color: 'text-[var(--color-success)]' },
-  approval_requested: { icon: Check, color: 'text-purple-500' },
+  approval_requested: { icon: Check, color: 'text-[var(--color-accent)]' },
   task_approved: { icon: CheckCircle2, color: 'text-[var(--color-success)]' },
   task_rejected: { icon: AlertTriangle, color: 'text-[var(--color-danger)]' },
-  document_uploaded: { icon: FileText, color: 'text-blue-500' },
+  document_uploaded: { icon: FileText, color: 'text-[var(--color-info)]' },
 };
 
 export function NotificationBell() {
@@ -104,12 +104,12 @@ export function NotificationBell() {
           setIsOpen(!isOpen);
           if (!isOpen) fetchNotifications();
         }}
-        className="relative p-2 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-gray-100 transition-colors focus-ring"
+        className="relative p-2 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-muted)] transition-colors focus-ring"
         aria-label="Notifications"
       >
         <Bell className="h-5 w-5" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 h-4.5 min-w-[18px] px-1 flex items-center justify-center rounded-full bg-[var(--color-danger)] text-white text-[10px] font-bold leading-none animate-scale-in">
+          <span className="absolute -top-0.5 -right-0.5 h-4.5 min-w-[18px] px-1 flex items-center justify-center rounded-full bg-[var(--color-danger)] text-[var(--color-danger-foreground)] text-[10px] font-bold leading-none animate-scale-in">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
@@ -127,7 +127,7 @@ export function NotificationBell() {
               <button
                 onClick={handleMarkAllRead}
                 disabled={loading}
-                className="text-xs text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] transition-colors flex items-center gap-1"
+                className="text-xs text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors flex items-center gap-1"
               >
                 <CheckCheck className="h-3.5 w-3.5" />
                 Mark all read
@@ -146,8 +146,8 @@ export function NotificationBell() {
                   <button
                     key={notification.id}
                     onClick={() => handleNotificationClick(notification)}
-                    className={`w-full text-left px-4 py-3 flex gap-3 hover:bg-gray-50 transition-colors border-b border-[var(--color-border)] last:border-b-0 ${
-                      !notification.is_read ? 'bg-[var(--color-primary-light)]/30' : ''
+                    className={`w-full text-left px-4 py-3 flex gap-3 hover:bg-[var(--color-muted)] transition-colors border-b border-[var(--color-border)] last:border-b-0 ${
+                      !notification.is_read ? 'bg-[var(--color-accent-muted)]/30' : ''
                     }`}
                   >
                     {/* Icon */}
@@ -175,7 +175,7 @@ export function NotificationBell() {
                     {/* Unread dot */}
                     {!notification.is_read && (
                       <div className="shrink-0 mt-2">
-                        <span className="block h-2 w-2 rounded-full bg-[var(--color-primary)]" />
+                        <span className="block h-2 w-2 rounded-full bg-[var(--color-accent)]" />
                       </div>
                     )}
                   </button>

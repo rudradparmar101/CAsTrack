@@ -116,12 +116,12 @@ export function ClientsPageClient({
                 {clientList.map((client) => (
                   <tr
                     key={client.id}
-                    className="hover:bg-[var(--color-primary-light)] transition-colors"
+                    className="hover:bg-[var(--color-accent-muted)] transition-colors"
                   >
                     <td className="px-6 py-4">
                       <Link
                         href={`/clients/${client.id}`}
-                        className="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors"
+                        className="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors"
                       >
                         {client.name}
                       </Link>
@@ -151,7 +151,7 @@ export function ClientsPageClient({
                         <div className="flex justify-end gap-1">
                           <Link
                             href={`/clients/${client.id}`}
-                            className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-primary-light)] transition-colors"
+                            className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-accent-muted)] transition-colors"
                             title="View & edit client"
                           >
                             <Pencil className="h-4 w-4" />

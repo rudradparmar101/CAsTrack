@@ -1,0 +1,13 @@
+
+> deadline-tracker@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.4 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://10.249.99.84:3000
+- Environments: .env.local
+✓ Ready in 884ms
+[next.config] __dirname = D:\Codes\Startup\CA prod\CA prod 1 | cwd = D:\Codes\Startup\CA prod\CA prod 1
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+
+ GET / 200 in 2.4s (next.js: 2.1s, proxy.ts: 129ms, application-code: 213ms)

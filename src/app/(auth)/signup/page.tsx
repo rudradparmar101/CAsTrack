@@ -66,7 +66,7 @@ export default function SignupPage() {
                 What happens next?
               </p>
               <ol className="list-decimal list-inside space-y-1">
-                <li>Open the email from DeadlineTracker</li>
+                <li>Open the email from CA Firm Manager</li>
                 <li>Click the &quot;Confirm your email&quot; link</li>
                 <li>You&apos;ll be automatically signed in</li>
               </ol>
@@ -81,7 +81,7 @@ export default function SignupPage() {
               setEmailSent(false);
               setSentEmail('');
             }}
-            className="text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] font-medium transition-colors"
+            className="text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] font-medium transition-colors"
           >
             try again
           </button>
@@ -91,7 +91,7 @@ export default function SignupPage() {
           Already verified?{' '}
           <Link
             href="/login"
-            className="font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] transition-colors"
+            className="font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
           >
             Sign in
           </Link>
@@ -107,17 +107,17 @@ export default function SignupPage() {
         Create your account
       </h2>
       <p className="text-[var(--color-text-secondary)] mb-6">
-        Get started with DeadlineTracker in minutes.
+        Get started with CA Firm Manager in minutes.
       </p>
 
       {/* Mode Toggle */}
-      <div className="flex rounded-lg border border-[var(--color-border)] p-1 mb-6 bg-gray-50">
+      <div className="flex rounded-lg border border-[var(--color-border)] p-1 mb-6 bg-[var(--color-muted)]">
         <button
           type="button"
           onClick={() => setMode('create')}
           className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
             mode === 'create'
-              ? 'bg-white shadow-sm text-[var(--color-text)]'
+              ? 'bg-[var(--color-surface)] shadow-sm text-[var(--color-text)]'
               : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
           }`}
         >
@@ -128,7 +128,7 @@ export default function SignupPage() {
           onClick={() => setMode('join')}
           className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
             mode === 'join'
-              ? 'bg-white shadow-sm text-[var(--color-text)]'
+              ? 'bg-[var(--color-surface)] shadow-sm text-[var(--color-text)]'
               : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
           }`}
         >
@@ -183,7 +183,7 @@ export default function SignupPage() {
         )}
 
         {error && (
-          <div className="rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-3 text-sm text-[var(--color-danger-text)]">
             {error}
           </div>
         )}
@@ -197,7 +197,7 @@ export default function SignupPage() {
         Already have an account?{' '}
         <Link
           href="/login"
-          className="font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] transition-colors"
+          className="font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
         >
           Sign in
         </Link>

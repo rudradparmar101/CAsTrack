@@ -10,19 +10,19 @@ interface BadgeProps {
 }
 
 const variantClasses: Record<BadgeVariant, string> = {
-  default: 'bg-gray-100 text-gray-700',
-  success: 'bg-[var(--color-success-bg)] text-emerald-700',
-  warning: 'bg-[var(--color-warning-bg)] text-amber-700',
-  danger: 'bg-[var(--color-danger-bg)] text-red-700',
-  info: 'bg-[var(--color-primary-light)] text-indigo-700',
+  default: 'bg-[var(--color-muted)] text-[var(--color-text-secondary)]',
+  success: 'bg-[var(--color-success-bg)] text-[var(--color-success-text)]',
+  warning: 'bg-[var(--color-warning-bg)] text-[var(--color-warning-text)]',
+  danger: 'bg-[var(--color-danger-bg)] text-[var(--color-danger-text)]',
+  info: 'bg-[var(--color-info-bg)] text-[var(--color-info-text)]',
 };
 
 const dotColors: Record<BadgeVariant, string> = {
-  default: 'bg-gray-400',
+  default: 'bg-[var(--color-text-muted)]',
   success: 'bg-[var(--color-success)]',
   warning: 'bg-[var(--color-warning)]',
   danger: 'bg-[var(--color-danger)]',
-  info: 'bg-[var(--color-primary)]',
+  info: 'bg-[var(--color-info)]',
 };
 
 export function Badge({ variant = 'default', children, className = '', dot = false }: BadgeProps) {

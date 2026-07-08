@@ -91,8 +91,8 @@ export function SettingsPageClient({ profile, organization }: SettingsPageClient
         <div
           className={`rounded-lg border px-4 py-3 text-sm animate-fade-in ${
             messageType === 'success'
-              ? 'bg-[var(--color-success-bg)] border-emerald-200 text-emerald-700'
-              : 'bg-[var(--color-danger-bg)] border-red-200 text-red-700'
+              ? 'bg-[var(--color-success-bg)] border-[var(--color-success-border)] text-[var(--color-success-text)]'
+              : 'bg-[var(--color-danger-bg)] border-[var(--color-danger-border)] text-[var(--color-danger-text)]'
           }`}
         >
           {message}
@@ -103,7 +103,7 @@ export function SettingsPageClient({ profile, organization }: SettingsPageClient
       <Card>
         <CardHeader>
           <CardTitle>Profile</CardTitle>
-          <Badge variant={profile.role === 'admin' ? 'info' : 'default'}>
+          <Badge variant={profile.role === 'partner' ? 'info' : 'default'}>
             {profile.role}
           </Badge>
         </CardHeader>
@@ -170,15 +170,15 @@ export function SettingsPageClient({ profile, organization }: SettingsPageClient
         </form>
       </Card>
 
-      {/* Organization (Admin only) */}
-      {profile.role === 'admin' && organization && (
+      {/* Firm (Partner only) */}
+      {profile.role === 'partner' && organization && (
         <Card>
           <CardHeader>
-            <CardTitle>Organization</CardTitle>
+            <CardTitle>Firm</CardTitle>
           </CardHeader>
           <form onSubmit={handleSaveOrg} className="space-y-4">
             <Input
-              label="Organization Name"
+              label="Firm Name"
               name="orgName"
               defaultValue={organization.name}
               required
@@ -191,7 +191,7 @@ export function SettingsPageClient({ profile, organization }: SettingsPageClient
             />
             <div className="flex justify-end">
               <Button type="submit" loading={isPending} size="sm">
-                Save Organization
+                Save Firm
               </Button>
             </div>
           </form>

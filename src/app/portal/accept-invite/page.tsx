@@ -65,7 +65,7 @@ function InvalidInvite() {
         Already activated your account?{' '}
         <Link
           href="/login"
-          className="font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] transition-colors"
+          className="font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
         >
           Sign in
         </Link>
@@ -76,11 +76,11 @@ function InvalidInvite() {
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4">
       <div className="max-w-md w-full">
         <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="h-10 w-10 rounded-xl bg-[var(--color-primary)] flex items-center justify-center">
-            <Building2 className="h-5 w-5 text-white" />
+          <div className="h-10 w-10 rounded-xl bg-[var(--color-accent)] flex items-center justify-center">
+            <Building2 className="h-5 w-5 text-[var(--color-accent-foreground)]" />
           </div>
           <span className="text-xl font-bold text-[var(--color-text)]">
             CA Firm Manager

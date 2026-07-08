@@ -28,7 +28,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
             bg-[var(--color-input-bg)] text-[var(--color-text)]
             placeholder:text-[var(--color-text-muted)]
             transition-colors duration-150
-            focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent
+            focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent
             disabled:bg-[var(--color-background)] disabled:text-[var(--color-text-muted)] disabled:cursor-not-allowed
             resize-y min-h-[80px]
             ${

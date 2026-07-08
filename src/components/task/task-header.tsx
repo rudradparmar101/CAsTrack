@@ -77,7 +77,7 @@ export function TaskHeader({ task, canUpdate, isPartner }: TaskHeaderProps) {
               {task.client && (
                 <Link
                   href={`/clients/${task.client.id}`}
-                  className="inline-flex items-center gap-1 hover:text-[var(--color-primary)] transition-colors"
+                  className="inline-flex items-center gap-1 hover:text-[var(--color-accent)] transition-colors"
                 >
                   <Briefcase className="h-3.5 w-3.5" />
                   {task.client.name}
@@ -111,7 +111,7 @@ export function TaskHeader({ task, canUpdate, isPartner }: TaskHeaderProps) {
         )}
 
         {error && (
-          <div className="mt-4 rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-4 py-3 text-sm text-red-700">
+          <div className="mt-4 rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-3 text-sm text-[var(--color-danger-text)]">
             {error}
           </div>
         )}
@@ -136,7 +136,7 @@ export function TaskHeader({ task, canUpdate, isPartner }: TaskHeaderProps) {
               >
                 {task.visible_to_client ? (
                   <>
-                    <Eye className="h-4 w-4 text-[var(--color-primary)]" />
+                    <Eye className="h-4 w-4 text-[var(--color-accent)]" />
                     Visible to client
                   </>
                 ) : (

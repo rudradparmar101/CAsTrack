@@ -18,7 +18,7 @@ export function TaskMetadata({ task }: TaskMetadataProps) {
   return (
     <Card>
       <h2 className="text-base font-semibold text-[var(--color-text)] flex items-center gap-2 mb-3">
-        <Info className="h-4 w-4 text-[var(--color-primary)]" />
+        <Info className="h-4 w-4 text-[var(--color-accent)]" />
         Details
       </h2>
       <dl className="space-y-2.5 text-sm">

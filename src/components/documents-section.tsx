@@ -81,7 +81,7 @@ export function DocumentsSection({
     <Card>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-[var(--color-text)] flex items-center gap-2">
-          <FileText className="h-5 w-5 text-[var(--color-primary)]" />
+          <FileText className="h-5 w-5 text-[var(--color-accent)]" />
           {title}
           <span className="text-sm font-normal text-[var(--color-text-muted)]">
             ({documents.length})
@@ -96,7 +96,7 @@ export function DocumentsSection({
       </div>
 
       {rowError && (
-        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
+        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-3 text-sm text-[var(--color-danger-text)] mb-4">
           {rowError}
         </div>
       )}
@@ -142,7 +142,7 @@ export function DocumentsSection({
                         {doc.name}
                       </span>
                       {doc.doc_type && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-primary-light)] text-[var(--color-primary)]">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-accent-muted)] text-[var(--color-accent)]">
                           {doc.doc_type}
                         </span>
                       )}
@@ -176,7 +176,7 @@ export function DocumentsSection({
                     </p>
 
                     {doc.approval_status === 'rejected' && doc.rejection_reason && (
-                      <div className="mt-2 rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-3 py-2 text-sm text-red-700">
+                      <div className="mt-2 rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-3 py-2 text-sm text-[var(--color-danger-text)]">
                         Rejected — &ldquo;{doc.rejection_reason}&rdquo;
                       </div>
                     )}
@@ -217,7 +217,7 @@ export function DocumentsSection({
                                   href={version.signedUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-light)] transition-colors"
+                                  className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-muted)] transition-colors"
                                   title="Download this version"
                                 >
                                   <Download className="h-4 w-4" />
@@ -236,7 +236,7 @@ export function DocumentsSection({
                         href={currentVersion.signedUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-light)] transition-colors"
+                        className="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-muted)] transition-colors"
                         title="Download current version"
                       >
                         <Download className="h-4 w-4" />
@@ -409,7 +409,7 @@ function UploadForm({
       )}
 
       {error && (
-        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-3 text-sm text-[var(--color-danger-text)]">
           {error}
         </div>
       )}
@@ -465,7 +465,7 @@ function RejectForm({
       />
 
       {error && (
-        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-3 text-sm text-[var(--color-danger-text)]">
           {error}
         </div>
       )}

@@ -1,21 +1,21 @@
 'use client';
 
 import React, { useState } from 'react';
-import { UserPlus, X, Crown } from 'lucide-react';
+import { UserPlus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { addTeamMemberAction, removeTeamMemberAction } from './actions';
-import type { TeamWithDetails } from '@/lib/types';
+import { addDepartmentMemberAction, removeDepartmentMemberAction } from './actions';
+import type { DepartmentWithMembers } from '@/lib/types';
 
 interface TeamMembersModalProps {
-  team: TeamWithDetails;
+  department: DepartmentWithMembers;
   allMembers: { id: string; name: string; email: string }[];
   onClose: () => void;
 }
 
 export function TeamMembersModal({
-  team,
+  department,
   allMembers,
   onClose,
 }: TeamMembersModalProps) {
@@ -24,7 +24,7 @@ export function TeamMembersModal({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const currentMemberIds = new Set(team.members.map((m) => m.user_id));
+  const currentMemberIds = new Set(department.members.map((m) => m.user_id));
   const availableMembers = allMembers.filter((m) => !currentMemberIds.has(m.id));
 
   const memberOptions = [
@@ -39,7 +39,7 @@ export function TeamMembersModal({
     if (!selectedUserId) return;
     setLoading(true);
     setError('');
-    const result = await addTeamMemberAction(team.id, selectedUserId);
+    const result = await addDepartmentMemberAction(department.id, selectedUserId);
     if (result.success) {
       setSelectedUserId('');
       setAddingMember(false);
@@ -50,8 +50,8 @@ export function TeamMembersModal({
   };
 
   const handleRemove = async (userId: string) => {
-    if (!confirm('Remove this member from the team?')) return;
-    const result = await removeTeamMemberAction(team.id, userId);
+    if (!confirm('Remove this member from the department?')) return;
+    const result = await removeDepartmentMemberAction(department.id, userId);
     if (!result.success) {
       setError(result.error || 'Failed to remove member');
     }
@@ -67,13 +67,13 @@ export function TeamMembersModal({
 
       {/* Current members list */}
       <div className="space-y-2">
-        {team.members.length > 0 ? (
-          team.members.map((member) => (
+        {department.members.length > 0 ? (
+          department.members.map((member) => (
             <div
               key={member.user_id}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-50 group"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[var(--color-muted)] group"
             >
-              <div className="h-8 w-8 rounded-full bg-[var(--color-primary-light)] flex items-center justify-center text-[var(--color-primary)] text-xs font-semibold shrink-0">
+              <div className="h-8 w-8 rounded-full bg-[var(--color-accent-muted)] flex items-center justify-center text-[var(--color-accent)] text-xs font-semibold shrink-0">
                 {member.profile.name
                   .split(' ')
                   .map((n) => n[0])
@@ -86,10 +86,7 @@ export function TeamMembersModal({
                   <span className="text-sm font-medium text-[var(--color-text)] truncate">
                     {member.profile.name}
                   </span>
-                  {member.user_id === team.lead_id && (
-                    <Crown className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                  )}
-                  <Badge variant={member.profile.role === 'admin' ? 'info' : 'default'}>
+                  <Badge variant={member.profile.role === 'partner' ? 'info' : 'default'}>
                     {member.profile.role}
                   </Badge>
                 </div>
@@ -100,7 +97,7 @@ export function TeamMembersModal({
               <button
                 onClick={() => handleRemove(member.user_id)}
                 className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors opacity-0 group-hover:opacity-100"
-                title="Remove from team"
+                title="Remove from department"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -108,7 +105,7 @@ export function TeamMembersModal({
           ))
         ) : (
           <p className="text-sm text-[var(--color-text-muted)] text-center py-4">
-            No members in this team yet.
+            No members in this department yet.
           </p>
         )}
       </div>
@@ -158,7 +155,7 @@ export function TeamMembersModal({
             </Button>
           ) : (
             <p className="text-xs text-[var(--color-text-muted)] text-center py-2">
-              All organization members are in this team
+              All firm members are in this department
             </p>
           )}
         </div>

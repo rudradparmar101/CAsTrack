@@ -54,11 +54,11 @@ export default async function OnboardingPage() {
 
 function OnboardingError({ message }: { message: string }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)]">
       <div className="max-w-md w-full mx-auto p-8">
         <div className="flex items-center gap-3 mb-8">
-          <div className="h-10 w-10 rounded-xl bg-[var(--color-primary)] flex items-center justify-center">
-            <Building2 className="h-5 w-5 text-white" />
+          <div className="h-10 w-10 rounded-xl bg-[var(--color-accent)] flex items-center justify-center">
+            <Building2 className="h-5 w-5 text-[var(--color-accent-foreground)]" />
           </div>
           <span className="text-xl font-bold text-[var(--color-text)]">
             CA Firm Manager
@@ -69,13 +69,13 @@ function OnboardingError({ message }: { message: string }) {
           We couldn&apos;t finish setting up your account
         </h1>
 
-        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-4 py-3 text-sm text-red-700 mb-6">
+        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-3 text-sm text-[var(--color-danger-text)] mb-6">
           {message}
         </div>
 
         <a
           href="/onboarding"
-          className="inline-flex items-center justify-center w-full px-4 py-2.5 rounded-lg bg-[var(--color-primary)] text-white font-medium hover:bg-[var(--color-primary-hover)] transition-colors"
+          className="inline-flex items-center justify-center w-full px-4 py-2.5 rounded-lg bg-[var(--color-accent)] text-[var(--color-accent-foreground)] font-medium hover:bg-[var(--color-accent-hover)] transition-colors"
         >
           Retry Setup
         </a>
@@ -83,7 +83,7 @@ function OnboardingError({ message }: { message: string }) {
         <form action={signOutAction} className="mt-3">
           <button
             type="submit"
-            className="inline-flex items-center justify-center w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] font-medium hover:bg-gray-100 transition-colors"
+            className="inline-flex items-center justify-center w-full px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] font-medium hover:bg-[var(--color-muted)] transition-colors"
           >
             Sign out and start over
           </button>

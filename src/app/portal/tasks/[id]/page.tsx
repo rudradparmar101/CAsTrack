@@ -77,12 +77,12 @@ export default async function PortalTaskPage({ params }: PortalTaskPageProps) {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[var(--color-background)]">
       <header className="bg-[var(--color-surface)] border-b border-[var(--color-border)]">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-[var(--color-primary)] flex items-center justify-center">
-              <Building2 className="h-5 w-5 text-white" />
+            <div className="h-9 w-9 rounded-xl bg-[var(--color-accent)] flex items-center justify-center">
+              <Building2 className="h-5 w-5 text-[var(--color-accent-foreground)]" />
             </div>
             <div>
               <p className="text-sm font-semibold text-[var(--color-text)]">{firm.name}</p>
@@ -121,9 +121,9 @@ export default async function PortalTaskPage({ params }: PortalTaskPageProps) {
           </div>
 
           {typedTask.stage === 'waiting_client' && (
-            <div className="mt-4 rounded-lg bg-[var(--color-warning-bg)] border border-amber-200 px-4 py-3 flex items-start gap-2.5">
-              <Hourglass className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-              <p className="text-sm text-amber-800">
+            <div className="mt-4 rounded-lg bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] px-4 py-3 flex items-start gap-2.5">
+              <Hourglass className="h-4 w-4 text-[var(--color-warning)] mt-0.5 shrink-0" />
+              <p className="text-sm text-[var(--color-warning-text)]">
                 <span className="font-medium">Your CA firm is waiting on you.</span> Please check
                 the messages below and upload any requested documents so work can continue.
               </p>

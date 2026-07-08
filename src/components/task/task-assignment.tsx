@@ -77,7 +77,7 @@ export function TaskAssignment({
   return (
     <Card>
       <h2 className="text-base font-semibold text-[var(--color-text)] flex items-center gap-2 mb-3">
-        <UserCog className="h-4 w-4 text-[var(--color-primary)]" />
+        <UserCog className="h-4 w-4 text-[var(--color-accent)]" />
         Assignment
       </h2>
 
@@ -103,7 +103,7 @@ export function TaskAssignment({
           />
 
           {error && (
-            <div className="rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-3 py-2 text-sm text-[var(--color-danger-text)]">
               {error}
             </div>
           )}

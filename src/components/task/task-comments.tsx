@@ -91,7 +91,7 @@ export function TaskComments({ taskId, comments, viewer, currentUserId }: TaskCo
         <MessageSquare className="h-5 w-5 text-[var(--color-text-muted)]" />
         <h2 className="text-base font-semibold text-[var(--color-text)]">Comments</h2>
         {comments.length > 0 && (
-          <span className="text-xs text-[var(--color-text-muted)] bg-[var(--color-primary-light)] rounded-full px-2 py-0.5">
+          <span className="text-xs text-[var(--color-text-muted)] bg-[var(--color-accent-muted)] rounded-full px-2 py-0.5">
             {comments.length}
           </span>
         )}
@@ -105,7 +105,7 @@ export function TaskComments({ taskId, comments, viewer, currentUserId }: TaskCo
 
             return (
               <div key={comment.id} className="flex gap-3 group/comment animate-fade-in">
-                <div className="h-8 w-8 rounded-full bg-[var(--color-primary-light)] text-[var(--color-primary)] flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5">
+                <div className="h-8 w-8 rounded-full bg-[var(--color-accent-muted)] text-[var(--color-accent)] flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5">
                   {getInitials(authorName(comment))}
                 </div>
 
@@ -125,7 +125,7 @@ export function TaskComments({ taskId, comments, viewer, currentUserId }: TaskCo
                     {viewer === 'staff' &&
                       (comment.visible_to_client ? (
                         <span
-                          className="inline-flex items-center gap-1 text-[10px] text-[var(--color-primary)]"
+                          className="inline-flex items-center gap-1 text-[10px] text-[var(--color-accent)]"
                           title="Visible in the client portal"
                         >
                           <Eye className="h-3 w-3" />
@@ -145,7 +145,7 @@ export function TaskComments({ taskId, comments, viewer, currentUserId }: TaskCo
                       <div className="relative ml-auto">
                         <button
                           onClick={() => setMenuOpenId(menuOpenId === comment.id ? null : comment.id)}
-                          className="p-1 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-primary-light)] transition-colors opacity-0 group-hover/comment:opacity-100"
+                          className="p-1 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-accent-muted)] transition-colors opacity-0 group-hover/comment:opacity-100"
                         >
                           <MoreHorizontal className="h-4 w-4" />
                         </button>
@@ -157,7 +157,7 @@ export function TaskComments({ taskId, comments, viewer, currentUserId }: TaskCo
                                 setEditingText(comment.content);
                                 setMenuOpenId(null);
                               }}
-                              className="w-full text-left px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-primary-light)] flex items-center gap-2"
+                              className="w-full text-left px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-accent-muted)] flex items-center gap-2"
                             >
                               <Edit className="h-3.5 w-3.5" />
                               Edit
@@ -180,7 +180,7 @@ export function TaskComments({ taskId, comments, viewer, currentUserId }: TaskCo
                       <textarea
                         value={editingText}
                         onChange={(e) => setEditingText(e.target.value)}
-                        className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm bg-white text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent resize-y min-h-[60px]"
+                        className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm bg-[var(--color-input-bg)] text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent resize-y min-h-[60px]"
                         rows={2}
                       />
                       <div className="flex items-center gap-2">
@@ -231,7 +231,7 @@ export function TaskComments({ taskId, comments, viewer, currentUserId }: TaskCo
       {/* New comment form */}
       <div className="border-t border-[var(--color-border)] pt-4">
         <div className="flex gap-3">
-          <div className="h-8 w-8 rounded-full bg-[var(--color-primary)] text-white flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5">
+          <div className="h-8 w-8 rounded-full bg-[var(--color-accent)] text-[var(--color-accent-foreground)] flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5">
             <User className="h-4 w-4" />
           </div>
           <div className="flex-1">
@@ -242,7 +242,7 @@ export function TaskComments({ taskId, comments, viewer, currentUserId }: TaskCo
               placeholder={
                 viewer === 'client' ? 'Write a message to your CA firm...' : 'Write a comment...'
               }
-              className="w-full rounded-lg border border-[var(--color-border)] px-3.5 py-2.5 text-sm bg-white text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent resize-y min-h-[80px] transition-colors duration-150"
+              className="w-full rounded-lg border border-[var(--color-border)] px-3.5 py-2.5 text-sm bg-[var(--color-input-bg)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent resize-y min-h-[80px] transition-colors duration-150"
               rows={3}
             />
             {error && <p className="text-xs text-[var(--color-danger)] mt-1">{error}</p>}

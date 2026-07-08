@@ -10,27 +10,27 @@ interface PriorityBadgeProps {
 const priorityConfig: Record<TaskPriority, { label: string; bg: string; text: string; dot: string }> = {
   low: {
     label: 'Low',
-    bg: 'bg-slate-100',
-    text: 'text-slate-600',
-    dot: 'bg-slate-400',
+    bg: 'bg-[var(--color-muted)]',
+    text: 'text-[var(--color-text-secondary)]',
+    dot: 'bg-[var(--color-text-muted)]',
   },
   medium: {
     label: 'Medium',
-    bg: 'bg-blue-50',
-    text: 'text-blue-700',
-    dot: 'bg-blue-500',
+    bg: 'bg-[var(--color-info-bg)]',
+    text: 'text-[var(--color-info-text)]',
+    dot: 'bg-[var(--color-info)]',
   },
   high: {
     label: 'High',
-    bg: 'bg-amber-50',
-    text: 'text-amber-700',
-    dot: 'bg-amber-500',
+    bg: 'bg-[var(--color-warning-bg)]',
+    text: 'text-[var(--color-warning-text)]',
+    dot: 'bg-[var(--color-warning)]',
   },
   critical: {
     label: 'Critical',
-    bg: 'bg-red-50',
-    text: 'text-red-700',
-    dot: 'bg-red-500',
+    bg: 'bg-[var(--color-danger-bg)]',
+    text: 'text-[var(--color-danger-text)]',
+    dot: 'bg-[var(--color-danger)]',
   },
 };
 

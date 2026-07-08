@@ -9,12 +9,13 @@ import type { TaskTemplate, ActionResult } from '@/lib/types';
 
 interface TemplateFormProps {
   template?: TaskTemplate;
+  departments: { id: string; name: string }[];
   action: (formData: FormData) => Promise<ActionResult>;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export function TemplateForm({ template, action, onSuccess, onCancel }: TemplateFormProps) {
+export function TemplateForm({ template, departments, action, onSuccess, onCancel }: TemplateFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -81,6 +82,21 @@ export function TemplateForm({ template, action, onSuccess, onCancel }: Template
         defaultValue={template?.recurring_rule || 'none'}
       />
 
+      <div className="space-y-1.5">
+        <Select
+          label="Department"
+          name="department_id"
+          options={[
+            { value: '', label: 'No department (any)' },
+            ...departments.map((d) => ({ value: d.id, label: d.name })),
+          ]}
+          defaultValue={template?.department_id || ''}
+        />
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Optionally scope this template to one department.
+        </p>
+      </div>
+
       <Textarea
         label="Checklist Items"
         name="checklist_items"
@@ -91,7 +107,7 @@ export function TemplateForm({ template, action, onSuccess, onCancel }: Template
       />
 
       {error && (
-        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-3 text-sm text-[var(--color-danger-text)]">
           {error}
         </div>
       )}

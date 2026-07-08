@@ -160,7 +160,7 @@ export function ClientDetailClient({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <h2 className="text-lg font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
-            <BadgeCheck className="h-5 w-5 text-[var(--color-primary)]" />
+            <BadgeCheck className="h-5 w-5 text-[var(--color-accent)]" />
             Registration Details
           </h2>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
@@ -181,7 +181,7 @@ export function ClientDetailClient({
 
         <Card>
           <h2 className="text-lg font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
-            <UserRound className="h-5 w-5 text-[var(--color-primary)]" />
+            <UserRound className="h-5 w-5 text-[var(--color-accent)]" />
             Contact
           </h2>
           <div className="space-y-3 text-sm">
@@ -194,7 +194,7 @@ export function ClientDetailClient({
               {client.phone || '—'}
             </p>
             {client.notes && (
-              <div className="rounded-lg bg-[var(--color-warning-bg)] border border-amber-200 px-3 py-2 text-[var(--color-text)]">
+              <div className="rounded-lg bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] px-3 py-2 text-[var(--color-text)]">
                 <p className="text-xs text-[var(--color-text-muted)] uppercase tracking-wider mb-1">
                   Internal notes
                 </p>
@@ -208,7 +208,7 @@ export function ClientDetailClient({
       {/* Addresses */}
       <Card>
         <h2 className="text-lg font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
-          <MapPin className="h-5 w-5 text-[var(--color-primary)]" />
+          <MapPin className="h-5 w-5 text-[var(--color-accent)]" />
           Addresses
           <span className="text-sm font-normal text-[var(--color-text-muted)]">
             ({addresses.length})
@@ -223,7 +223,7 @@ export function ClientDetailClient({
                 key={address.id}
                 className="rounded-lg border border-[var(--color-border)] p-4"
               >
-                <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-primary-light)] text-[var(--color-primary)]">
+                <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-accent-muted)] text-[var(--color-accent)]">
                   {addressTypeLabel(address.type)}
                 </span>
                 <p className="text-sm text-[var(--color-text)] mt-2">
@@ -244,7 +244,7 @@ export function ClientDetailClient({
       {/* Authorized persons */}
       <Card>
         <h2 className="text-lg font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
-          <UserRound className="h-5 w-5 text-[var(--color-primary)]" />
+          <UserRound className="h-5 w-5 text-[var(--color-accent)]" />
           Authorized Persons
           <span className="text-sm font-normal text-[var(--color-text-muted)]">
             ({authorizedPersons.length})
@@ -301,7 +301,7 @@ export function ClientDetailClient({
       {/* Tasks placeholder — module comes in a later phase */}
       <Card>
         <h2 className="text-lg font-semibold text-[var(--color-text)] mb-2 flex items-center gap-2">
-          <ClipboardList className="h-5 w-5 text-[var(--color-primary)]" />
+          <ClipboardList className="h-5 w-5 text-[var(--color-accent)]" />
           Tasks
         </h2>
         <p className="text-sm text-[var(--color-text-muted)]">
@@ -387,7 +387,7 @@ function InvitePortalForm({
           link with the client directly (valid for 7 days):
         </p>
         <div className="flex items-center gap-2">
-          <code className="flex-1 text-xs bg-gray-50 border border-[var(--color-border)] rounded-lg px-3 py-2 break-all select-all">
+          <code className="flex-1 text-xs bg-[var(--color-muted)] border border-[var(--color-border)] rounded-lg px-3 py-2 break-all select-all">
             {inviteUrl}
           </code>
           <Button variant="secondary" size="sm" onClick={handleCopy}>
@@ -412,7 +412,7 @@ function InvitePortalForm({
       />
 
       {error && (
-        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-3 text-sm text-[var(--color-danger-text)]">
           {error}
         </div>
       )}

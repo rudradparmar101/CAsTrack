@@ -1,10 +1,20 @@
 'use client';
 
-import React from 'react';
-import { Menu } from 'lucide-react';
+import React, { useSyncExternalStore } from 'react';
+import { Menu, Moon, Sun } from 'lucide-react';
 import type { Profile } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { NotificationBell } from '@/components/notification-bell';
+import { useTheme } from '@/components/theme-provider';
+
+const noopSubscribe = () => () => {};
+
+/** Server can't know a returning visitor's saved theme preference, so it
+ *  always renders as light. useSyncExternalStore (not a setState-in-effect)
+ *  is the React-sanctioned way to defer client-only values past hydration. */
+function useIsMounted() {
+  return useSyncExternalStore(noopSubscribe, () => true, () => false);
+}
 
 interface TopbarProps {
   profile: Profile;
@@ -12,11 +22,15 @@ interface TopbarProps {
 }
 
 export function Topbar({ profile, onMenuClick }: TopbarProps) {
+  const { theme, toggleTheme } = useTheme();
+  const mounted = useIsMounted();
+  const isDark = mounted && theme === 'dark';
+
   return (
     <header className="sticky top-0 z-30 h-16 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center px-4 sm:px-6 gap-4">
       <button
         onClick={onMenuClick}
-        className="lg:hidden p-2 rounded-lg text-[var(--color-text-secondary)] hover:bg-gray-100 transition-colors focus-ring"
+        className="lg:hidden p-2 rounded-lg text-[var(--color-text-secondary)] hover:bg-[var(--color-muted)] transition-colors focus-ring"
         aria-label="Open menu"
       >
         <Menu className="h-5 w-5" />
@@ -25,11 +39,23 @@ export function Topbar({ profile, onMenuClick }: TopbarProps) {
       <div className="flex-1" />
 
       <div className="flex items-center gap-3">
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-muted)] transition-colors focus-ring"
+          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {isDark ? (
+            <Sun className="h-5 w-5" />
+          ) : (
+            <Moon className="h-5 w-5" />
+          )}
+        </button>
         <NotificationBell />
-        <Badge variant={profile.role === 'admin' ? 'info' : 'default'}>
-          {profile.role === 'admin' ? 'Admin' : 'Member'}
+        <Badge variant={profile.role === 'partner' ? 'info' : 'default'}>
+          {profile.role === 'partner' ? 'Partner' : 'Employee'}
         </Badge>
-        <div className="h-8 w-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white text-sm font-medium">
+        <div className="h-8 w-8 rounded-full bg-[var(--color-accent)] flex items-center justify-center text-[var(--color-accent-foreground)] text-sm font-medium">
           {profile.name
             .split(' ')
             .map((n) => n[0])
@@ -41,4 +67,3 @@ export function Topbar({ profile, onMenuClick }: TopbarProps) {
     </header>
   );
 }
-

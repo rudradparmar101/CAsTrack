@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { getAuthProfile } from '@/lib/auth';
 import type { ActionResult, ChecklistItem } from '@/lib/types';
 
 function parseChecklistItems(raw: string): ChecklistItem[] {
@@ -12,40 +12,55 @@ function parseChecklistItems(raw: string): ChecklistItem[] {
     .map((text) => ({ id: crypto.randomUUID(), text, completed: false }));
 }
 
-export async function createTemplateAction(formData: FormData): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+/**
+ * Mirrors requireClientsManage in clients/actions.ts: partners always pass,
+ * employees need the templates.manage permission (checked via the same
+ * has_permission SECURITY DEFINER RPC the RLS policies use).
+ */
+async function requireTemplatesManage(): Promise<
+  | { ok: true; supabase: Awaited<ReturnType<typeof getAuthProfile>>['supabase']; firmId: string }
+  | { ok: false; error: string }
+> {
+  const { supabase, profile } = await getAuthProfile();
 
-  if (!user) return { success: false, error: 'Not authenticated' };
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('organization_id, role')
-    .eq('id', user.id)
-    .single();
-
-  if (!profile || profile.role !== 'admin') {
-    return { success: false, error: 'Only admins can create task templates' };
+  if (profile.role !== 'partner') {
+    const { data: allowed } = await supabase.rpc('has_permission', {
+      p_key: 'templates.manage',
+    });
+    if (allowed !== true) {
+      return { ok: false, error: 'You do not have permission to manage task templates.' };
+    }
   }
+  return { ok: true, supabase, firmId: profile.firm_id };
+}
+
+export async function createTemplateAction(formData: FormData): Promise<ActionResult> {
+  const guard = await requireTemplatesManage();
+  if (!guard.ok) return { success: false, error: guard.error };
+  const { supabase, firmId } = guard;
 
   const title = formData.get('title') as string;
   const description = (formData.get('description') as string) || '';
   const defaultPriority = (formData.get('default_priority') as string) || 'medium';
   const recurringRule = (formData.get('recurring_rule') as string) || 'none';
   const checklistRaw = (formData.get('checklist_items') as string) || '';
+  const departmentId = (formData.get('department_id') as string) || null;
 
   if (!title?.trim()) {
     return { success: false, error: 'Template title is required' };
   }
 
+  const { data: { user } } = await supabase.auth.getUser();
+
   const { error } = await supabase.from('task_templates').insert({
-    organization_id: profile.organization_id,
+    firm_id: firmId,
+    department_id: departmentId,
     title: title.trim(),
     description: description.trim(),
     default_priority: defaultPriority,
     recurring_rule: recurringRule,
     checklist_items: parseChecklistItems(checklistRaw),
-    created_by: user.id,
+    created_by: user!.id,
   });
 
   if (error) {
@@ -57,20 +72,9 @@ export async function createTemplateAction(formData: FormData): Promise<ActionRe
 }
 
 export async function updateTemplateAction(formData: FormData): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) return { success: false, error: 'Not authenticated' };
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('organization_id, role')
-    .eq('id', user.id)
-    .single();
-
-  if (!profile || profile.role !== 'admin') {
-    return { success: false, error: 'Only admins can update task templates' };
-  }
+  const guard = await requireTemplatesManage();
+  if (!guard.ok) return { success: false, error: guard.error };
+  const { supabase, firmId } = guard;
 
   const id = formData.get('id') as string;
   const title = formData.get('title') as string;
@@ -78,6 +82,7 @@ export async function updateTemplateAction(formData: FormData): Promise<ActionRe
   const defaultPriority = (formData.get('default_priority') as string) || 'medium';
   const recurringRule = (formData.get('recurring_rule') as string) || 'none';
   const checklistRaw = (formData.get('checklist_items') as string) || '';
+  const departmentId = (formData.get('department_id') as string) || null;
 
   if (!title?.trim()) {
     return { success: false, error: 'Template title is required' };
@@ -91,9 +96,10 @@ export async function updateTemplateAction(formData: FormData): Promise<ActionRe
       default_priority: defaultPriority,
       recurring_rule: recurringRule,
       checklist_items: parseChecklistItems(checklistRaw),
+      department_id: departmentId,
     })
     .eq('id', id)
-    .eq('organization_id', profile.organization_id);
+    .eq('firm_id', firmId);
 
   if (error) {
     return { success: false, error: error.message };
@@ -104,26 +110,15 @@ export async function updateTemplateAction(formData: FormData): Promise<ActionRe
 }
 
 export async function deleteTemplateAction(templateId: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) return { success: false, error: 'Not authenticated' };
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('organization_id, role')
-    .eq('id', user.id)
-    .single();
-
-  if (!profile || profile.role !== 'admin') {
-    return { success: false, error: 'Only admins can delete task templates' };
-  }
+  const guard = await requireTemplatesManage();
+  if (!guard.ok) return { success: false, error: guard.error };
+  const { supabase, firmId } = guard;
 
   const { error } = await supabase
     .from('task_templates')
     .delete()
     .eq('id', templateId)
-    .eq('organization_id', profile.organization_id);
+    .eq('firm_id', firmId);
 
   if (error) {
     return { success: false, error: error.message };

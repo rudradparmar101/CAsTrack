@@ -69,7 +69,7 @@ export function TaskCard({ task, isAdmin, onEdit }: TaskCardProps) {
           >
             <Link
               href={`/tasks/${task.id}`}
-              className="hover:text-[var(--color-primary)] transition-colors"
+              className="hover:text-[var(--color-accent)] transition-colors"
             >
               {task.title}
             </Link>
@@ -102,7 +102,7 @@ export function TaskCard({ task, isAdmin, onEdit }: TaskCardProps) {
           </span>
         )}
         {task.recurring_rule && task.recurring_rule !== 'none' && (
-          <span className="inline-flex items-center gap-1 text-[var(--color-primary)]">
+          <span className="inline-flex items-center gap-1 text-[var(--color-accent)]">
             <Repeat className="h-3.5 w-3.5" />
             {task.recurring_rule.charAt(0).toUpperCase() + task.recurring_rule.slice(1)}
           </span>
@@ -174,7 +174,7 @@ export function TaskCard({ task, isAdmin, onEdit }: TaskCardProps) {
             {onEdit && (
               <button
                 onClick={() => onEdit(task)}
-                className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-primary-light)] transition-colors opacity-0 group-hover:opacity-100"
+                className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-accent-muted)] transition-colors opacity-0 group-hover:opacity-100"
               >
                 <Edit className="h-4 w-4" />
               </button>

@@ -33,7 +33,7 @@ interface TasksPageClientProps {
 }
 
 const selectClass =
-  "px-3 py-1.5 text-xs rounded-md border border-[var(--color-border)] bg-white text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] appearance-none pr-7 bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%20fill%3D%22none%22%3E%3Cpath%20d%3D%22M3%205l3%203%203-3%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px_12px] bg-[position:right_8px_center] bg-no-repeat";
+  "px-3 py-1.5 text-xs rounded-md border border-[var(--color-border)] bg-[var(--color-input-bg)] text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]";
 
 function dueMeta(task: FirmTaskWithRefs): { label: string; className: string } {
   const formatted = format(new Date(task.due_date), 'MMM d, yyyy');
@@ -176,7 +176,7 @@ export function TasksPageClient({
                 value={searchText}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder="Search title, description, period..."
-                className="w-full pl-9 pr-9 py-2.5 text-sm rounded-lg border border-[var(--color-border)] bg-white text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-colors"
+                className="w-full pl-9 pr-9 py-2.5 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-input-bg)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent transition-colors"
               />
               {searchText && (
                 <button
@@ -189,14 +189,14 @@ export function TasksPageClient({
             </div>
 
             {/* View tabs */}
-            <div className="flex items-center rounded-lg border border-[var(--color-border)] p-1 bg-gray-50 shrink-0 overflow-x-auto">
+            <div className="flex items-center rounded-lg border border-[var(--color-border)] p-1 bg-[var(--color-muted)] shrink-0 overflow-x-auto">
               {TASK_VIEWS.map((opt) => (
                 <button
                   key={opt.value}
                   onClick={() => applyFilters({ view: opt.value as TaskView })}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all whitespace-nowrap ${
                     filters.view === opt.value
-                      ? 'bg-white shadow-sm text-[var(--color-text)]'
+                      ? 'bg-[var(--color-surface)] shadow-sm text-[var(--color-text)]'
                       : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
                   }`}
                 >
@@ -210,14 +210,14 @@ export function TasksPageClient({
               onClick={() => setShowFilters(!showFilters)}
               className={`flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-all shrink-0 ${
                 showFilters || activeFilterCount > 0
-                  ? 'border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]'
-                  : 'border-[var(--color-border)] bg-gray-50 text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
+                  ? 'border-[var(--color-accent)] bg-[var(--color-accent-muted)] text-[var(--color-accent)]'
+                  : 'border-[var(--color-border)] bg-[var(--color-muted)] text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
               }`}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Filters
               {activeFilterCount > 0 && (
-                <span className="h-4.5 min-w-[18px] px-1 flex items-center justify-center rounded-full bg-[var(--color-primary)] text-white text-[10px] font-bold leading-none">
+                <span className="h-4.5 min-w-[18px] px-1 flex items-center justify-center rounded-full bg-[var(--color-accent)] text-[var(--color-accent-foreground)] text-[10px] font-bold leading-none">
                   {activeFilterCount}
                 </span>
               )}
@@ -375,12 +375,12 @@ export function TasksPageClient({
                     return (
                       <tr
                         key={task.id}
-                        className="hover:bg-[var(--color-primary-light)] transition-colors"
+                        className="hover:bg-[var(--color-accent-muted)] transition-colors"
                       >
                         <td className="px-4 py-3.5">
                           <Link
                             href={`/tasks/${task.id}`}
-                            className="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors inline-flex items-center gap-1.5"
+                            className="text-sm font-medium text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors inline-flex items-center gap-1.5"
                           >
                             {task.title}
                             {!task.visible_to_client && (

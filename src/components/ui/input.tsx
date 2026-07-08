@@ -25,11 +25,11 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           id={inputId}
           className={`
             w-full rounded-lg border px-3.5 py-2.5 text-sm
-            bg-white text-[var(--color-text)]
+            bg-[var(--color-input-bg)] text-[var(--color-text)]
             placeholder:text-[var(--color-text-muted)]
             transition-colors duration-150
-            focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent
-            disabled:bg-gray-50 disabled:text-[var(--color-text-muted)] disabled:cursor-not-allowed
+            focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent
+            disabled:bg-[var(--color-muted)] disabled:text-[var(--color-text-muted)] disabled:cursor-not-allowed
             ${
               error
                 ? 'border-[var(--color-danger)] focus:ring-[var(--color-danger)]'

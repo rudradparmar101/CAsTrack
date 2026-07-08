@@ -20,7 +20,7 @@ export function TaskClientCard({ client }: TaskClientCardProps) {
   return (
     <Card>
       <h2 className="text-base font-semibold text-[var(--color-text)] flex items-center gap-2 mb-3">
-        <Briefcase className="h-4 w-4 text-[var(--color-primary)]" />
+        <Briefcase className="h-4 w-4 text-[var(--color-accent)]" />
         Client
       </h2>
       {!client ? (
@@ -32,7 +32,7 @@ export function TaskClientCard({ client }: TaskClientCardProps) {
           <div className="flex items-start justify-between gap-2">
             <Link
               href={`/clients/${client.id}`}
-              className="font-medium text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors"
+              className="font-medium text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors"
             >
               {client.name}
             </Link>

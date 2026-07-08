@@ -20,17 +20,17 @@ import type { TaskWithDetails, TaskPriority } from '@/lib/types';
 
 interface AdminDashboardProps {
   tasks: TaskWithDetails[];
-  teams: { id: string; name: string }[];
+  departments: { id: string; name: string }[];
 }
 
 const priorityConfig: Record<TaskPriority, { label: string; color: string; bg: string }> = {
   critical: { label: 'Critical', color: 'text-[var(--color-danger)]', bg: 'bg-[var(--color-danger)]' },
-  high: { label: 'High', color: 'text-amber-600', bg: 'bg-amber-500' },
-  medium: { label: 'Medium', color: 'text-blue-600', bg: 'bg-blue-500' },
-  low: { label: 'Low', color: 'text-gray-500', bg: 'bg-gray-400' },
+  high: { label: 'High', color: 'text-[var(--color-warning)]', bg: 'bg-[var(--color-warning)]' },
+  medium: { label: 'Medium', color: 'text-[var(--color-info)]', bg: 'bg-[var(--color-info)]' },
+  low: { label: 'Low', color: 'text-[var(--color-text-muted)]', bg: 'bg-[var(--color-text-muted)]' },
 };
 
-export function AdminDashboard({ tasks, teams }: AdminDashboardProps) {
+export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
   const overdueTasks = tasks.filter((t) => {
     if (t.status === 'completed') return false;
     const due = new Date(t.due_date + 'T23:59:59');
@@ -54,12 +54,12 @@ export function AdminDashboard({ tasks, teams }: AdminDashboardProps) {
     return { priority: p, count, pct: pendingTasks.length > 0 ? Math.round((count / pendingTasks.length) * 100) : 0 };
   });
 
-  // Team workload
-  const teamWorkload = teams.map((team) => {
-    const teamTasks = pendingTasks.filter((t) => t.assigned_team_id === team.id);
-    const teamCompleted = completedTasks.filter((t) => t.assigned_team_id === team.id);
-    return { ...team, pending: teamTasks.length, completed: teamCompleted.length, total: teamTasks.length + teamCompleted.length };
-  }).filter((t) => t.total > 0).sort((a, b) => b.pending - a.pending);
+  // Department workload
+  const departmentWorkload = departments.map((department) => {
+    const deptTasks = pendingTasks.filter((t) => t.department_id === department.id);
+    const deptCompleted = completedTasks.filter((t) => t.department_id === department.id);
+    return { ...department, pending: deptTasks.length, completed: deptCompleted.length, total: deptTasks.length + deptCompleted.length };
+  }).filter((d) => d.total > 0).sort((a, b) => b.pending - a.pending);
 
   // Unassigned tasks
   const unassignedTasks = pendingTasks.filter((t) => !t.assigned_to);
@@ -96,8 +96,8 @@ export function AdminDashboard({ tasks, teams }: AdminDashboardProps) {
           icon={<ListTodo className="h-5 w-5" />}
           label="Total Tasks"
           value={tasks.length}
-          color="text-[var(--color-primary)]"
-          bg="bg-[var(--color-primary-light)]"
+          color="text-[var(--color-accent)]"
+          bg="bg-[var(--color-accent-muted)]"
         />
         <StatCard
           icon={<AlertTriangle className="h-5 w-5" />}
@@ -110,7 +110,7 @@ export function AdminDashboard({ tasks, teams }: AdminDashboardProps) {
           icon={<Clock className="h-5 w-5" />}
           label="Due This Week"
           value={dueSoonTasks.length}
-          color="text-amber-600"
+          color="text-[var(--color-warning)]"
           bg="bg-[var(--color-warning-bg)]"
         />
         <StatCard
@@ -136,9 +136,9 @@ export function AdminDashboard({ tasks, teams }: AdminDashboardProps) {
               {completedTasks.length} of {tasks.length} tasks
             </span>
           </div>
-          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-2.5 bg-[var(--color-muted)] rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-success)] rounded-full transition-all duration-700 ease-out"
+              className="h-full bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-success)] rounded-full transition-all duration-700 ease-out"
               style={{ width: `${completionRate}%` }}
             />
           </div>
@@ -157,7 +157,7 @@ export function AdminDashboard({ tasks, teams }: AdminDashboardProps) {
               return (
                 <div key={priority} className="flex items-center gap-3">
                   <span className={`text-xs font-medium w-14 ${cfg.color}`}>{cfg.label}</span>
-                  <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="flex-1 h-2 bg-[var(--color-muted)] rounded-full overflow-hidden">
                     <div
                       className={`h-full ${cfg.bg} rounded-full transition-all duration-500`}
                       style={{ width: `${pct}%` }}
@@ -200,28 +200,28 @@ export function AdminDashboard({ tasks, teams }: AdminDashboardProps) {
         </Card>
       </div>
 
-      {/* Team Workload */}
-      {teamWorkload.length > 0 && (
+      {/* Department Workload */}
+      {departmentWorkload.length > 0 && (
         <Card padding="lg">
           <div className="flex items-center gap-2 mb-4">
             <Users className="h-4 w-4 text-[var(--color-text-muted)]" />
-            <h3 className="text-sm font-semibold text-[var(--color-text)]">Team Workload</h3>
+            <h3 className="text-sm font-semibold text-[var(--color-text)]">Department Workload</h3>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {teamWorkload.map((team) => (
+            {departmentWorkload.map((department) => (
               <div
-                key={team.id}
+                key={department.id}
                 className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] px-4 py-3"
               >
-                <div className="h-9 w-9 rounded-lg bg-[var(--color-primary-light)] text-[var(--color-primary)] flex items-center justify-center text-xs font-bold">
-                  {team.name.slice(0, 2).toUpperCase()}
+                <div className="h-9 w-9 rounded-lg bg-[var(--color-accent-muted)] text-[var(--color-accent)] flex items-center justify-center text-xs font-bold">
+                  {department.name.slice(0, 2).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[var(--color-text)] truncate">{team.name}</p>
+                  <p className="text-sm font-medium text-[var(--color-text)] truncate">{department.name}</p>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs text-amber-600">{team.pending} pending</span>
+                    <span className="text-xs text-[var(--color-warning)]">{department.pending} pending</span>
                     <span className="text-xs text-[var(--color-text-muted)]">·</span>
-                    <span className="text-xs text-[var(--color-success)]">{team.completed} done</span>
+                    <span className="text-xs text-[var(--color-success)]">{department.completed} done</span>
                   </div>
                 </div>
               </div>
@@ -250,7 +250,7 @@ export function AdminDashboard({ tasks, teams }: AdminDashboardProps) {
       {/* Due This Week */}
       {dueSoonTasks.length > 0 && (
         <section>
-          <h2 className="text-lg font-semibold text-amber-600 mb-4">
+          <h2 className="text-lg font-semibold text-[var(--color-warning)] mb-4">
             Due This Week ({dueSoonTasks.length})
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

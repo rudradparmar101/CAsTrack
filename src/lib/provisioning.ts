@@ -19,6 +19,33 @@ export type ProvisionResult =
   | { ok: true; homePath: string }
   | { ok: false; reason: string };
 
+/**
+ * /onboarding has no locking around its check-then-insert: two concurrent
+ * requests for the same not-yet-provisioned user (observed in practice —
+ * Next.js can fire more than one request to /onboarding within the same
+ * navigation) both see "no profile" and both attempt the profiles insert.
+ * The loser hits profiles_pkey (23505) even though provisioning genuinely
+ * succeeded via the winner. Treat that specific race as success by reading
+ * back the profile the winner created, instead of surfacing a false failure.
+ */
+async function resolveProfileRace(
+  adminClient: AdminClient,
+  userId: string,
+  profileError: { code?: string } | null
+): Promise<ProvisionResult | null> {
+  if (profileError?.code !== '23505') return null;
+
+  const { data: existing } = await adminClient
+    .from('profiles')
+    .select('role')
+    .eq('id', userId)
+    .single();
+
+  if (!existing) return null;
+
+  return { ok: true, homePath: existing.role === 'client_user' ? '/portal' : '/dashboard' };
+}
+
 export async function provisionFromMetadata(
   adminClient: AdminClient,
   user: User
@@ -74,6 +101,8 @@ async function provisionCreateFirm(
 
   if (profileError) {
     await adminClient.from('firms').delete().eq('id', firm.id);
+    const raceResult = await resolveProfileRace(adminClient, user.id, profileError);
+    if (raceResult) return raceResult;
     console.error('Provisioning: partner profile creation error:', profileError);
     return { ok: false, reason: 'We could not finish setting up your account. Please try again.' };
   }
@@ -125,6 +154,8 @@ async function provisionJoinFirm(
   });
 
   if (profileError) {
+    const raceResult = await resolveProfileRace(adminClient, user.id, profileError);
+    if (raceResult) return raceResult;
     console.error('Provisioning: employee profile creation error:', profileError);
     return { ok: false, reason: 'We could not finish setting up your account. Please try again.' };
   }
@@ -184,6 +215,8 @@ export async function provisionClientFromInvite(
   });
 
   if (profileError) {
+    const raceResult = await resolveProfileRace(adminClient, user.id, profileError);
+    if (raceResult) return raceResult;
     console.error('Provisioning: client_user profile creation error:', profileError);
     return { ok: false, reason: 'We could not finish setting up your portal account. Please try again.' };
   }

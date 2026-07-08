@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, Users2, Crown, UserPlus, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Plus, Edit, Users2, UserPlus, Ban, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,14 +10,14 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { TeamInviteCode } from './team-invite-code';
 import { TeamForm } from './team-form';
 import { TeamMembersModal } from './team-members-modal';
-import { createTeamAction, updateTeamAction, deleteTeamAction, changeRoleAction, fetchMoreMembersAction } from './actions';
+import { createDepartmentAction, updateDepartmentAction, toggleDepartmentActiveAction, fetchMoreMembersAction } from './actions';
 import { MEMBERS_PAGE_SIZE } from '@/lib/pagination';
-import type { TeamWithDetails, Profile } from '@/lib/types';
+import type { DepartmentWithMembers, Profile } from '@/lib/types';
 
 interface TeamPageClientProps {
   members: Profile[];
   allMembersLite: { id: string; name: string; email: string }[];
-  teams: TeamWithDetails[];
+  departments: DepartmentWithMembers[];
   organization: { invite_code: string };
   currentUserId: string;
   initialHasMore: boolean;
@@ -26,15 +26,15 @@ interface TeamPageClientProps {
 export function TeamPageClient({
   members,
   allMembersLite,
-  teams,
+  departments,
   organization,
   currentUserId,
   initialHasMore,
 }: TeamPageClientProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingTeam, setEditingTeam] = useState<TeamWithDetails | null>(null);
-  const [managingTeam, setManagingTeam] = useState<TeamWithDetails | null>(null);
-  const [roleError, setRoleError] = useState('');
+  const [editingDepartment, setEditingDepartment] = useState<DepartmentWithMembers | null>(null);
+  const [managingDepartment, setManagingDepartment] = useState<DepartmentWithMembers | null>(null);
+  const [actionError, setActionError] = useState('');
   const [memberList, setMemberList] = useState(members);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -58,24 +58,13 @@ export function TeamPageClient({
     setLoadingMore(false);
   };
 
-  const memberOptions = allMembersLite.map((m) => ({ id: m.id, name: m.name }));
-  const allMembersWithEmail = allMembersLite;
-
-  const handleDelete = async (teamId: string, teamName: string) => {
-    if (!confirm(`Delete team "${teamName}"? This cannot be undone.`)) return;
-    await deleteTeamAction(teamId);
-  };
-
-  const handleRoleChange = async (memberId: string, memberName: string, currentRole: string) => {
-    const newRole = currentRole === 'admin' ? 'member' : 'admin';
-    const action = newRole === 'admin' ? 'promote' : 'demote';
-    if (!confirm(`${action === 'promote' ? 'Promote' : 'Demote'} ${memberName} to ${newRole}?`)) return;
-
-    setRoleError('');
-    const result = await changeRoleAction(memberId, newRole);
+  const handleToggleActive = async (departmentId: string, name: string, isActive: boolean) => {
+    const verb = isActive ? 'Deactivate' : 'Reactivate';
+    if (!confirm(`${verb} department "${name}"?`)) return;
+    const result = await toggleDepartmentActiveAction(departmentId, !isActive);
     if (!result.success) {
-      setRoleError(result.error || 'Failed to change role');
-      setTimeout(() => setRoleError(''), 5000);
+      setActionError(result.error || 'Failed to update department');
+      setTimeout(() => setActionError(''), 5000);
     }
   };
 
@@ -86,74 +75,75 @@ export function TeamPageClient({
         <div>
           <h1 className="text-2xl font-bold text-[var(--color-text)]">Team</h1>
           <p className="text-sm text-[var(--color-text-secondary)] mt-1">
-            {allMembersLite.length} member{allMembersLite.length !== 1 ? 's' : ''} · {teams.length} team{teams.length !== 1 ? 's' : ''}
+            {allMembersLite.length} member{allMembersLite.length !== 1 ? 's' : ''} · {departments.length} department{departments.length !== 1 ? 's' : ''}
           </p>
         </div>
         <Button onClick={() => setShowCreateModal(true)}>
           <Plus className="h-4 w-4" />
-          Create Team
+          Add Department
         </Button>
       </div>
 
       {/* Invite Code */}
       <TeamInviteCode inviteCode={organization.invite_code} />
 
-      {/* Teams Section */}
+      {actionError && (
+        <div className="rounded-lg bg-[var(--color-danger-bg)] text-[var(--color-danger)] text-sm px-4 py-3 animate-fade-in">
+          {actionError}
+        </div>
+      )}
+
+      {/* Departments Section */}
       <div>
         <h2 className="text-base font-semibold text-[var(--color-text)] mb-3">
-          Teams
+          Departments
         </h2>
 
-        {teams.length > 0 ? (
+        {departments.length > 0 ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {teams.map((team) => (
-              <Card key={team.id} padding="md" hover>
+            {departments.map((department) => (
+              <Card key={department.id} padding="md" hover>
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-semibold text-[var(--color-text)] truncate">
-                      {team.name}
-                    </h3>
-                    {team.description && (
-                      <p className="text-xs text-[var(--color-text-secondary)] mt-0.5 line-clamp-2">
-                        {team.description}
-                      </p>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-[var(--color-text)] truncate">
+                        {department.name}
+                      </h3>
+                      {!department.is_active && (
+                        <Badge variant="default">Inactive</Badge>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
-                      onClick={() => setEditingTeam(team)}
-                      className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-primary-light)] transition-colors"
-                      title="Edit team"
+                      onClick={() => setEditingDepartment(department)}
+                      className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-accent-muted)] transition-colors"
+                      title="Edit department"
                     >
                       <Edit className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      onClick={() => handleDelete(team.id, team.name)}
+                      onClick={() => handleToggleActive(department.id, department.name, department.is_active)}
                       className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors"
-                      title="Delete team"
+                      title={department.is_active ? 'Deactivate department' : 'Reactivate department'}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      {department.is_active ? (
+                        <Ban className="h-3.5 w-3.5" />
+                      ) : (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      )}
                     </button>
                   </div>
                 </div>
 
-                {/* Lead */}
-                {team.lead && (
-                  <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] mb-3">
-                    <Crown className="h-3.5 w-3.5 text-amber-500" />
-                    <span>Lead: {team.lead.name}</span>
-                  </div>
-                )}
-
                 {/* Members preview */}
                 <div className="flex items-center justify-between pt-3 border-t border-[var(--color-border)]">
                   <div className="flex items-center gap-2">
-                    {/* Stacked avatars */}
                     <div className="flex -space-x-2">
-                      {team.members.slice(0, 4).map((member) => (
+                      {department.members.slice(0, 4).map((member) => (
                         <div
                           key={member.user_id}
-                          className="h-7 w-7 rounded-full bg-[var(--color-primary-light)] text-[var(--color-primary)] flex items-center justify-center text-[10px] font-semibold border-2 border-[var(--color-surface)]"
+                          className="h-7 w-7 rounded-full bg-[var(--color-accent-muted)] text-[var(--color-accent)] flex items-center justify-center text-[10px] font-semibold border-2 border-[var(--color-surface)]"
                           title={member.profile.name}
                         >
                           {member.profile.name
@@ -164,20 +154,20 @@ export function TeamPageClient({
                             .slice(0, 2)}
                         </div>
                       ))}
-                      {team.members.length > 4 && (
+                      {department.members.length > 4 && (
                         <div className="h-7 w-7 rounded-full bg-[var(--color-background)] text-[var(--color-text-muted)] flex items-center justify-center text-[10px] font-medium border-2 border-[var(--color-surface)]">
-                          +{team.members.length - 4}
+                          +{department.members.length - 4}
                         </div>
                       )}
                     </div>
                     <span className="text-xs text-[var(--color-text-muted)]">
-                      {team.members.length} member{team.members.length !== 1 ? 's' : ''}
+                      {department.members.length} member{department.members.length !== 1 ? 's' : ''}
                     </span>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setManagingTeam(team)}
+                    onClick={() => setManagingDepartment(department)}
                     className="text-xs"
                   >
                     <UserPlus className="h-3.5 w-3.5" />
@@ -191,12 +181,12 @@ export function TeamPageClient({
           <Card padding="lg">
             <EmptyState
               icon={<Users2 className="h-10 w-10" />}
-              title="No teams yet"
-              description="Create teams to organize your members and assign tasks to groups."
+              title="No departments yet"
+              description="Add departments to organize your staff and scope tasks and templates."
               action={
                 <Button onClick={() => setShowCreateModal(true)} size="sm">
                   <Plus className="h-4 w-4" />
-                  Create First Team
+                  Add First Department
                 </Button>
               }
             />
@@ -209,12 +199,6 @@ export function TeamPageClient({
         <h2 className="text-base font-semibold text-[var(--color-text)] mb-3">
           All Members
         </h2>
-
-        {roleError && (
-          <div className="rounded-lg bg-[var(--color-danger-bg)] text-[var(--color-danger)] text-sm px-4 py-3 mb-3 animate-fade-in">
-            {roleError}
-          </div>
-        )}
 
         <Card padding="none">
           <div className="overflow-x-auto">
@@ -231,25 +215,22 @@ export function TeamPageClient({
                     Role
                   </th>
                   <th className="text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider px-6 py-3 hidden md:table-cell">
-                    Teams
-                  </th>
-                  <th className="text-right text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider px-6 py-3">
-                    Actions
+                    Departments
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
                 {memberList.map((member) => {
-                  const memberTeams = teams.filter((t) =>
-                    t.members.some((m) => m.user_id === member.id)
+                  const memberDepartments = departments.filter((d) =>
+                    d.members.some((m) => m.user_id === member.id)
                   );
                   const isSelf = member.id === currentUserId;
 
                   return (
-                    <tr key={member.id} className="hover:bg-[var(--color-primary-light)] transition-colors">
+                    <tr key={member.id} className="hover:bg-[var(--color-accent-muted)] transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="h-9 w-9 rounded-full bg-[var(--color-primary-light)] flex items-center justify-center text-[var(--color-primary)] text-sm font-medium">
+                          <div className="h-9 w-9 rounded-full bg-[var(--color-accent-muted)] flex items-center justify-center text-[var(--color-accent)] text-sm font-medium">
                             {member.name
                               .split(' ')
                               .map((n: string) => n[0])
@@ -271,43 +252,24 @@ export function TeamPageClient({
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <Badge variant={member.role === 'admin' ? 'info' : 'default'}>
-                          {member.role === 'admin' ? 'Admin' : 'Member'}
+                        <Badge variant={member.role === 'partner' ? 'info' : 'default'}>
+                          {member.role}
                         </Badge>
                       </td>
                       <td className="px-6 py-4 hidden md:table-cell">
                         <div className="flex flex-wrap gap-1">
-                          {memberTeams.length > 0 ? (
-                            memberTeams.map((t) => (
-                              <Badge key={t.id} variant="default">
-                                {t.name}
+                          {memberDepartments.length > 0 ? (
+                            memberDepartments.map((d) => (
+                              <Badge key={d.id} variant="default">
+                                {d.name}
                               </Badge>
                             ))
                           ) : (
                             <span className="text-xs text-[var(--color-text-muted)] italic">
-                              No teams
+                              No departments
                             </span>
                           )}
                         </div>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        {!isSelf && (
-                          <button
-                            onClick={() => handleRoleChange(member.id, member.name, member.role)}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                              member.role === 'admin'
-                                ? 'text-amber-700 bg-[var(--color-warning-bg)] hover:bg-amber-100'
-                                : 'text-[var(--color-primary)] bg-[var(--color-primary-light)] hover:bg-indigo-100'
-                            }`}
-                            title={member.role === 'admin' ? 'Demote to Member' : 'Promote to Admin'}
-                          >
-                            {member.role === 'admin' ? (
-                              <><ShieldOff className="h-3.5 w-3.5" /> Demote</>
-                            ) : (
-                              <><ShieldCheck className="h-3.5 w-3.5" /> Promote</>
-                            )}
-                          </button>
-                        )}
                       </td>
                     </tr>
                   );
@@ -326,49 +288,47 @@ export function TeamPageClient({
         )}
       </div>
 
-      {/* Create Team Modal */}
+      {/* Add Department Modal */}
       <Modal
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-        title="Create Team"
+        title="Add Department"
       >
         <TeamForm
-          members={memberOptions}
-          action={createTeamAction}
+          action={createDepartmentAction}
           onSuccess={() => setShowCreateModal(false)}
           onCancel={() => setShowCreateModal(false)}
         />
       </Modal>
 
-      {/* Edit Team Modal */}
+      {/* Edit Department Modal */}
       <Modal
-        open={!!editingTeam}
-        onClose={() => setEditingTeam(null)}
-        title="Edit Team"
+        open={!!editingDepartment}
+        onClose={() => setEditingDepartment(null)}
+        title="Edit Department"
       >
-        {editingTeam && (
+        {editingDepartment && (
           <TeamForm
-            team={editingTeam}
-            members={memberOptions}
-            action={updateTeamAction}
-            onSuccess={() => setEditingTeam(null)}
-            onCancel={() => setEditingTeam(null)}
+            department={editingDepartment}
+            action={updateDepartmentAction}
+            onSuccess={() => setEditingDepartment(null)}
+            onCancel={() => setEditingDepartment(null)}
           />
         )}
       </Modal>
 
       {/* Manage Members Modal */}
       <Modal
-        open={!!managingTeam}
-        onClose={() => setManagingTeam(null)}
-        title={`Manage Members — ${managingTeam?.name}`}
+        open={!!managingDepartment}
+        onClose={() => setManagingDepartment(null)}
+        title={`Manage Members — ${managingDepartment?.name}`}
         maxWidth="md"
       >
-        {managingTeam && (
+        {managingDepartment && (
           <TeamMembersModal
-            team={managingTeam}
-            allMembers={allMembersWithEmail}
-            onClose={() => setManagingTeam(null)}
+            department={managingDepartment}
+            allMembers={allMembersLite}
+            onClose={() => setManagingDepartment(null)}
           />
         )}
       </Modal>

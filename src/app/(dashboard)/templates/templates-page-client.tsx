@@ -13,9 +13,10 @@ import type { TaskTemplate } from '@/lib/types';
 
 interface TemplatesPageClientProps {
   templates: TaskTemplate[];
+  departments: { id: string; name: string }[];
 }
 
-export function TemplatesPageClient({ templates }: TemplatesPageClientProps) {
+export function TemplatesPageClient({ templates, departments }: TemplatesPageClientProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
 
@@ -59,7 +60,7 @@ export function TemplatesPageClient({ templates }: TemplatesPageClientProps) {
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => setEditingTemplate(template)}
-                    className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-primary-light)] transition-colors"
+                    className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-accent-muted)] transition-colors"
                     title="Edit template"
                   >
                     <Edit className="h-3.5 w-3.5" />
@@ -77,7 +78,7 @@ export function TemplatesPageClient({ templates }: TemplatesPageClientProps) {
               <div className="flex items-center flex-wrap gap-3 text-xs text-[var(--color-text-muted)] pt-3 border-t border-[var(--color-border)]">
                 <PriorityBadge priority={template.default_priority} size="sm" />
                 {template.recurring_rule && template.recurring_rule !== 'none' && (
-                  <span className="inline-flex items-center gap-1 text-[var(--color-primary)]">
+                  <span className="inline-flex items-center gap-1 text-[var(--color-accent)]">
                     <Repeat className="h-3.5 w-3.5" />
                     {template.recurring_rule.charAt(0).toUpperCase() + template.recurring_rule.slice(1)}
                   </span>
@@ -116,6 +117,7 @@ export function TemplatesPageClient({ templates }: TemplatesPageClientProps) {
         maxWidth="lg"
       >
         <TemplateForm
+          departments={departments}
           action={createTemplateAction}
           onSuccess={() => setShowCreateModal(false)}
           onCancel={() => setShowCreateModal(false)}
@@ -132,6 +134,7 @@ export function TemplatesPageClient({ templates }: TemplatesPageClientProps) {
         {editingTemplate && (
           <TemplateForm
             template={editingTemplate}
+            departments={departments}
             action={updateTemplateAction}
             onSuccess={() => setEditingTemplate(null)}
             onCancel={() => setEditingTemplate(null)}

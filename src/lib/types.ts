@@ -375,14 +375,14 @@ export interface Task {
   title: string;
   description: string;
   client_id: string;
-  organization_id: string;
+  firm_id: string;
   due_date: string;
   status: TaskStatus;
   priority: TaskPriority;
   recurring_rule: RecurrenceRule;
   parent_task_id: string | null;
   assigned_to: string | null;
-  assigned_team_id: string | null;
+  department_id: string | null;
   review_status: ReviewStatus;
   reviewer_id: string | null;
   created_by: string;
@@ -390,18 +390,17 @@ export interface Task {
   updated_at: string;
 }
 
-export interface Team {
+export interface Department {
   id: string;
-  organization_id: string;
+  firm_id: string;
+  code: string;
   name: string;
-  description: string;
-  lead_id: string | null;
+  is_active: boolean;
   created_at: string;
-  updated_at: string;
 }
 
-export interface TeamMember {
-  team_id: string;
+export interface DepartmentMember {
+  department_id: string;
   user_id: string;
   joined_at: string;
 }
@@ -464,7 +463,8 @@ export interface TeamTemplate {
 
 export interface TaskTemplate {
   id: string;
-  organization_id: string;
+  firm_id: string;
+  department_id: string | null;
   title: string;
   description: string;
   default_priority: TaskPriority;
@@ -486,7 +486,7 @@ export interface ChecklistItem {
 export interface TaskWithDetails extends Task {
   clients: Pick<Client, 'id' | 'name'>;
   assigned_profile: Pick<Profile, 'id' | 'name'> | null;
-  assigned_team?: Pick<Team, 'id' | 'name'> | null;
+  assigned_team?: Pick<Department, 'id' | 'name'> | null;
   reviewer_profile?: Pick<Profile, 'id' | 'name'> | null;
 }
 
@@ -508,13 +508,11 @@ export interface TaskActivityWithActor extends TaskActivity {
   actor: Pick<Profile, 'id' | 'name'>;
 }
 
-export interface TeamWithDetails extends Team {
-  lead: Pick<Profile, 'id' | 'name' | 'email'> | null;
-  members: TeamMemberWithProfile[];
-  _count?: { members: number };
+export interface DepartmentWithMembers extends Department {
+  members: DepartmentMemberWithProfile[];
 }
 
-export interface TeamMemberWithProfile extends TeamMember {
+export interface DepartmentMemberWithProfile extends DepartmentMember {
   profile: Pick<Profile, 'id' | 'name' | 'email' | 'role'>;
 }
 

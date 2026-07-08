@@ -4,7 +4,6 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { useTheme } from '@/components/theme-provider';
 import type { Profile, Organization } from '@/lib/types';
 import {
   LayoutDashboard,
@@ -15,8 +14,6 @@ import {
   LogOut,
   Clock,
   X,
-  Moon,
-  Sun,
   LayoutTemplate,
 } from 'lucide-react';
 
@@ -46,7 +43,6 @@ const memberNavItems = [
 export function Sidebar({ profile, organization, open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { theme, toggleTheme } = useTheme();
   // CA roles: partners get the full staff nav; employees get the scoped one
   // (RLS decides what they see inside each page). 'admin' is the legacy
   // DeadlineTracker role kept until the remaining pages are ported.
@@ -82,11 +78,11 @@ export function Sidebar({ profile, organization, open, onClose }: SidebarProps) 
         {/* Logo */}
         <div className="flex items-center justify-between px-5 py-5 border-b border-white/10">
           <Link href="/dashboard" className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-[var(--color-primary)] flex items-center justify-center">
-              <Clock className="h-4 w-4 text-white" />
+            <div className="h-8 w-8 rounded-lg bg-[var(--color-accent)] flex items-center justify-center">
+              <Clock className="h-4 w-4 text-[var(--color-accent-foreground)]" />
             </div>
             <span className="text-base font-semibold text-white">
-              DeadlineTracker
+              CA Firm Manager
             </span>
           </Link>
           <button
@@ -132,21 +128,6 @@ export function Sidebar({ profile, organization, open, onClose }: SidebarProps) 
             );
           })}
         </nav>
-
-        {/* Theme Toggle */}
-        <div className="px-3 py-2">
-          <button
-            onClick={toggleTheme}
-            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-[var(--color-sidebar-text)] hover:bg-[var(--color-sidebar-hover)] hover:text-[var(--color-sidebar-active)] transition-colors"
-          >
-            {theme === 'dark' ? (
-              <Sun className="h-[18px] w-[18px]" />
-            ) : (
-              <Moon className="h-[18px] w-[18px]" />
-            )}
-            {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-          </button>
-        </div>
 
         {/* User & Logout */}
         <div className="px-3 py-4 border-t border-white/10">

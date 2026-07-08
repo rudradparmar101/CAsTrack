@@ -18,11 +18,11 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-lg bg-[var(--color-primary)] flex items-center justify-center">
-                <Clock className="h-4.5 w-4.5 text-white" />
+              <div className="h-9 w-9 rounded-lg bg-[var(--color-accent)] flex items-center justify-center">
+                <Clock className="h-4.5 w-4.5 text-[var(--color-accent-foreground)]" />
               </div>
               <span className="text-lg font-bold text-[var(--color-text)]">
-                DeadlineTracker
+                CA Firm Manager
               </span>
             </div>
             <div className="flex items-center gap-3">
@@ -34,7 +34,7 @@ export default function LandingPage() {
               </Link>
               <Link
                 href="/signup"
-                className="px-4 py-2 text-sm font-medium text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded-lg transition-colors shadow-sm"
+                className="px-4 py-2 text-sm font-medium text-[var(--color-accent-foreground)] bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-lg transition-colors shadow-sm"
               >
                 Get Started
               </Link>
@@ -45,16 +45,16 @@ export default function LandingPage() {
 
       {/* Hero */}
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 via-white to-emerald-50" />
+        <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-accent-muted)] via-[var(--color-background)] to-[var(--color-success-bg)]" />
         <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-24 sm:pt-28 sm:pb-32">
           <div className="max-w-3xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--color-primary-light)] text-[var(--color-primary)] text-sm font-medium mb-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--color-accent-muted)] text-[var(--color-accent)] text-sm font-medium mb-6">
               <Zap className="h-3.5 w-3.5" />
               Built for accounting firms
             </div>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-[var(--color-text)] leading-tight tracking-tight">
               Never miss a client{' '}
-              <span className="text-[var(--color-primary)]">deadline</span>{' '}
+              <span className="text-[var(--color-accent)]">deadline</span>{' '}
               again.
             </h1>
             <p className="mt-6 text-lg sm:text-xl text-[var(--color-text-secondary)] max-w-2xl mx-auto leading-relaxed">
@@ -64,14 +64,14 @@ export default function LandingPage() {
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
                 href="/signup"
-                className="inline-flex items-center gap-2 px-6 py-3 text-base font-medium text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded-xl transition-all shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300"
+                className="inline-flex items-center gap-2 px-6 py-3 text-base font-medium text-[var(--color-accent-foreground)] bg-[var(--color-accent)] hover:bg-[var(--color-accent-hover)] rounded-xl transition-all shadow-lg"
               >
                 Start Free
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
                 href="/login"
-                className="inline-flex items-center gap-2 px-6 py-3 text-base font-medium text-[var(--color-text)] bg-white hover:bg-gray-50 rounded-xl transition-colors border border-[var(--color-border)] shadow-sm"
+                className="inline-flex items-center gap-2 px-6 py-3 text-base font-medium text-[var(--color-text)] bg-[var(--color-surface)] hover:bg-[var(--color-muted)] rounded-xl transition-colors border border-[var(--color-border)] shadow-sm"
               >
                 Sign In
               </Link>
@@ -88,7 +88,7 @@ export default function LandingPage() {
               Everything your firm needs
             </h2>
             <p className="mt-4 text-lg text-[var(--color-text-secondary)] max-w-2xl mx-auto">
-              Focus on your clients, not on chasing deadlines. DeadlineTracker
+              Focus on your clients, not on chasing deadlines. CA Firm Manager
               keeps your entire team aligned.
             </p>
           </div>
@@ -105,14 +105,14 @@ export default function LandingPage() {
               icon={<Users className="h-6 w-6" />}
               title="Team Collaboration"
               description="Invite your team with a simple code. Admins manage everything; members focus on their assigned work."
-              color="text-[var(--color-primary)]"
-              bg="bg-[var(--color-primary-light)]"
+              color="text-[var(--color-accent)]"
+              bg="bg-[var(--color-accent-muted)]"
             />
             <FeatureCard
               icon={<BarChart3 className="h-6 w-6" />}
               title="Dashboard Views"
               description="See overdue tasks at a glance. Color-coded urgency indicators keep your team focused on what matters most."
-              color="text-amber-600"
+              color="text-[var(--color-warning)]"
               bg="bg-[var(--color-warning-bg)]"
             />
             <FeatureCard
@@ -126,14 +126,14 @@ export default function LandingPage() {
               icon={<Clock className="h-6 w-6" />}
               title="Email Reminders"
               description="Automatic email notifications before deadlines. Never be caught off guard by an approaching due date."
-              color="text-[var(--color-primary)]"
-              bg="bg-[var(--color-primary-light)]"
+              color="text-[var(--color-accent)]"
+              bg="bg-[var(--color-accent-muted)]"
             />
             <FeatureCard
               icon={<Zap className="h-6 w-6" />}
               title="Lightning Fast"
               description="Built with modern technology for instant page loads. No lag, no waiting — just speed."
-              color="text-amber-600"
+              color="text-[var(--color-warning)]"
               bg="bg-[var(--color-warning-bg)]"
             />
           </div>
@@ -144,18 +144,18 @@ export default function LandingPage() {
       <section className="py-20 sm:py-24">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="relative rounded-2xl overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-sidebar)] to-indigo-900" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-sidebar)] to-[#115e59]" />
             <div className="relative px-8 py-16 sm:px-16 sm:py-20 text-center">
               <h2 className="text-3xl sm:text-4xl font-bold text-white">
                 Ready to stop missing deadlines?
               </h2>
-              <p className="mt-4 text-lg text-indigo-200 max-w-xl mx-auto">
-                Join firms already using DeadlineTracker to keep their teams organized and clients happy.
+              <p className="mt-4 text-lg text-[var(--color-sidebar-text)] max-w-xl mx-auto">
+                Join firms already using CA Firm Manager to keep their teams organized and clients happy.
               </p>
               <div className="mt-8">
                 <Link
                   href="/signup"
-                  className="inline-flex items-center gap-2 px-8 py-3.5 text-base font-semibold text-[var(--color-primary)] bg-white hover:bg-indigo-50 rounded-xl transition-colors shadow-lg"
+                  className="inline-flex items-center gap-2 px-8 py-3.5 text-base font-semibold text-[var(--color-accent)] bg-white hover:bg-[var(--color-accent-muted)] rounded-xl transition-colors shadow-lg"
                 >
                   Get Started Free
                   <ArrowRight className="h-4 w-4" />
@@ -171,15 +171,15 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-md bg-[var(--color-primary)] flex items-center justify-center">
-                <Clock className="h-3.5 w-3.5 text-white" />
+              <div className="h-7 w-7 rounded-md bg-[var(--color-accent)] flex items-center justify-center">
+                <Clock className="h-3.5 w-3.5 text-[var(--color-accent-foreground)]" />
               </div>
               <span className="text-sm font-semibold text-[var(--color-text)]">
-                DeadlineTracker
+                CA Firm Manager
               </span>
             </div>
             <p className="text-sm text-[var(--color-text-muted)]">
-              © {new Date().getFullYear()} DeadlineTracker. All rights reserved.
+              © {new Date().getFullYear()} CA Firm Manager. All rights reserved.
             </p>
           </div>
         </div>

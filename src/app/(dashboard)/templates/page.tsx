@@ -7,14 +7,24 @@ import type { TaskTemplate } from '@/lib/types';
 export default async function TemplatesPage() {
   const { supabase, profile } = await getAuthContext();
 
-  if (profile.role !== 'admin') {
-    redirect('/dashboard');
+  if (profile.role !== 'partner') {
+    const { data: allowed } = await supabase.rpc('has_permission', {
+      p_key: 'templates.manage',
+    });
+    if (allowed !== true) {
+      redirect('/dashboard');
+    }
   }
 
-  const { data: templates } = await supabase
-    .from('task_templates')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const [{ data: templates }, { data: departments }] = await Promise.all([
+    supabase.from('task_templates').select('*').order('created_at', { ascending: false }),
+    supabase.from('departments').select('id, name').order('name'),
+  ]);
 
-  return <TemplatesPageClient templates={(templates as TaskTemplate[]) || []} />;
+  return (
+    <TemplatesPageClient
+      templates={(templates as TaskTemplate[]) || []}
+      departments={departments || []}
+    />
+  );
 }

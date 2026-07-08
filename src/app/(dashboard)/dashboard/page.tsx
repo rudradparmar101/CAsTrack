@@ -17,20 +17,13 @@ export default async function DashboardPage() {
     `)
     .order('due_date', { ascending: true });
 
-  if (profile.role === 'admin') {
-    // Fetch teams for workload analytics (may not exist if migration not applied)
-    let teams: { id: string; name: string }[] = [];
-    try {
-      const { data } = await supabase
-        .from('teams')
-        .select('id, name')
-        .order('name');
-      teams = data || [];
-    } catch {
-      // teams table may not exist
-    }
+  if (profile.role === 'partner') {
+    const { data: departments } = await supabase
+      .from('departments')
+      .select('id, name')
+      .order('name');
 
-    return <AdminDashboard tasks={tasks || []} teams={teams} />;
+    return <AdminDashboard tasks={tasks || []} departments={departments || []} />;
   }
 
   return <MemberDashboard tasks={tasks || []} />;

@@ -2,22 +2,18 @@
 
 import React, { useState } from 'react';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import type { Team, ActionResult } from '@/lib/types';
+import type { Department, ActionResult } from '@/lib/types';
 
 interface TeamFormProps {
-  team?: Team;
-  members: { id: string; name: string }[];
+  department?: Department;
   action: (formData: FormData) => Promise<ActionResult>;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
 export function TeamForm({
-  team,
-  members,
+  department,
   action,
   onSuccess,
   onCancel,
@@ -25,19 +21,14 @@ export function TeamForm({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const leadOptions = [
-    { value: '', label: 'No Lead' },
-    ...members.map((m) => ({ value: m.id, label: m.name })),
-  ];
-
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
     const formData = new FormData(e.currentTarget);
-    if (team) {
-      formData.set('id', team.id);
+    if (department) {
+      formData.set('id', department.id);
     }
 
     const result = await action(formData);
@@ -58,26 +49,11 @@ export function TeamForm({
       )}
 
       <Input
-        label="Team Name"
+        label="Department Name"
         name="name"
-        placeholder="e.g. Tax Department"
-        defaultValue={team?.name || ''}
+        placeholder="e.g. International Tax"
+        defaultValue={department?.name || ''}
         required
-      />
-
-      <Textarea
-        label="Description"
-        name="description"
-        placeholder="What does this team handle?"
-        defaultValue={team?.description || ''}
-        rows={3}
-      />
-
-      <Select
-        label="Team Lead"
-        name="lead_id"
-        options={leadOptions}
-        defaultValue={team?.lead_id || ''}
       />
 
       <div className="flex items-center justify-end gap-3 pt-2">
@@ -85,7 +61,7 @@ export function TeamForm({
           Cancel
         </Button>
         <Button type="submit" loading={loading}>
-          {team ? 'Update Team' : 'Create Team'}
+          {department ? 'Update Department' : 'Create Department'}
         </Button>
       </div>
     </form>

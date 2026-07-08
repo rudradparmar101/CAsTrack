@@ -74,7 +74,7 @@ export function Modal({
           </h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-gray-100 transition-colors focus-ring"
+            className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-muted)] transition-colors focus-ring"
           >
             <X className="h-5 w-5" />
           </button>

@@ -65,7 +65,7 @@ export default function LoginPage() {
         />
 
         {error && (
-          <div className="rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-3 text-sm text-[var(--color-danger-text)]">
             {error}
           </div>
         )}
@@ -79,7 +79,7 @@ export default function LoginPage() {
         Don&apos;t have an account?{' '}
         <Link
           href="/signup"
-          className="font-medium text-[var(--color-primary)] hover:text-[var(--color-primary-hover)] transition-colors"
+          className="font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)] transition-colors"
         >
           Get started
         </Link>

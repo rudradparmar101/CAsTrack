@@ -41,20 +41,20 @@ export function TeamInviteCode({ inviteCode }: { inviteCode: string }) {
   };
 
   return (
-    <Card className="bg-[var(--color-primary-light)] border-indigo-200">
+    <Card className="bg-[var(--color-accent-muted)] border-[var(--color-border)]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-[var(--color-text)]">
             Invite Code
           </h3>
           <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
-            Share this code with team members so they can join your organization.
+            Share this code with new employees so they can join your firm.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={handleCopy}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-surface)] border border-indigo-200 text-sm font-mono font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary-light)] transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-sm font-mono font-semibold text-[var(--color-accent)] hover:bg-[var(--color-accent-muted)] transition-colors"
           >
             {inviteCode}
             {copied ? (

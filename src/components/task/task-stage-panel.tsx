@@ -66,7 +66,7 @@ export function TaskStagePanel({
     <Card>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-base font-semibold text-[var(--color-text)] flex items-center gap-2">
-          <GitBranch className="h-4 w-4 text-[var(--color-primary)]" />
+          <GitBranch className="h-4 w-4 text-[var(--color-accent)]" />
           Stage
         </h2>
         <StageBadge stage={stage} />
@@ -79,7 +79,7 @@ export function TaskStagePanel({
             onChange={(e) => setNote(e.target.value)}
             placeholder="Optional note (e.g. what needs rework)..."
             rows={2}
-            className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm bg-white text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent resize-y"
+            className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm bg-[var(--color-input-bg)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent resize-y"
           />
           <div className="flex flex-col gap-2">
             {transitions.map((toStage) => (
@@ -155,7 +155,7 @@ export function TaskStagePanel({
       )}
 
       {error && (
-        <div className="mt-3 rounded-lg bg-[var(--color-danger-bg)] border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="mt-3 rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-3 py-2 text-sm text-[var(--color-danger-text)]">
           {error}
         </div>
       )}

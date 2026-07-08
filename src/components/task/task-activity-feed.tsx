@@ -25,7 +25,7 @@ export function TaskActivityFeed({ activities }: TaskActivityFeedProps) {
         <Activity className="h-5 w-5 text-[var(--color-text-muted)]" />
         <h2 className="text-base font-semibold text-[var(--color-text)]">Activity</h2>
         {activities.length > 0 && (
-          <span className="text-xs text-[var(--color-text-muted)] bg-[var(--color-primary-light)] rounded-full px-2 py-0.5">
+          <span className="text-xs text-[var(--color-text-muted)] bg-[var(--color-accent-muted)] rounded-full px-2 py-0.5">
             {activities.length}
           </span>
         )}

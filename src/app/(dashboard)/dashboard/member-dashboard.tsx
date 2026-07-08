@@ -42,7 +42,7 @@ export function MemberDashboard({ tasks }: MemberDashboardProps) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-[var(--color-primary-light)] text-[var(--color-primary)] flex items-center justify-center">
+            <div className="h-10 w-10 rounded-lg bg-[var(--color-accent-muted)] text-[var(--color-accent)] flex items-center justify-center">
               <ListTodo className="h-5 w-5" />
             </div>
             <div>
@@ -64,7 +64,7 @@ export function MemberDashboard({ tasks }: MemberDashboardProps) {
         </Card>
         <Card>
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-[var(--color-warning-bg)] text-amber-600 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-lg bg-[var(--color-warning-bg)] text-[var(--color-warning)] flex items-center justify-center">
               <Clock className="h-5 w-5" />
             </div>
             <div>
@@ -137,7 +137,7 @@ export function MemberDashboard({ tasks }: MemberDashboardProps) {
           <EmptyState
             icon={<ListTodo className="h-12 w-12" />}
             title="No tasks assigned"
-            description="You don't have any tasks yet. Your admin will assign tasks to you."
+            description="You don't have any tasks assigned yet."
           />
         </Card>
       )}
