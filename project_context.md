@@ -1,8 +1,8 @@
 # Project Context — CA Firm Management SaaS
 
-> **Last updated:** 2026-07-07 (after Phase 4 — Task Management)
-> **Repo:** `CA prod 1/` — a local copy of the **DeadlineTracker** codebase (a Next.js + Supabase multi-tenant deadline-tracking SaaS, fully documented in `REFERENCE_ARCHITECTURE.md`) being converted in place into a **Chartered Accountant Firm Management SaaS for the Indian market**.
-> **Version control:** local git only — no GitHub, no remote of any kind. The repo has a single auto-generated commit from `create-next-app`; **all CA-firm work (Phases 1–4) is uncommitted in the working tree.**
+> **Last updated:** 2026-07-09 (roadmap v2 — plan moved to docs/ROADMAP.md)
+> **Repo:** `CA prod 1/` — a local copy of the **DeadlineTracker** codebase (a Next.js + Supabase multi-tenant deadline-tracking SaaS, fully documented in `REFERENCE_ARCHITECTURE.md`) being converted in place into a **Chartered Accountant Firm Management SaaS for the Indian market**, now rebranded **CA Firm Manager**.
+> **Version control:** local git only — no GitHub, no remote of any kind. **No longer uncommitted:** three commits exist (`37ae6b0` create-next-app baseline, `e9607ad` Phases 1–4, `abb4af8` Phase 5 legacy-page port + Phase 6 reskin, bundled together). Working tree is clean.
 > **This file is the single source of truth for project state.** Update it at the end of every phase.
 
 ---
@@ -11,13 +11,13 @@
 
 | Question | Answer |
 |---|---|
-| What phase are we in? | **Phase 4 complete** (Tasks). Next: stand up the real DB + runtime verification, then Team→Departments (Phase 5). |
-| Does it build? | ✅ `npm run build` clean (incl. TypeScript). ✅ `npm run lint` — only the 7 **pre-existing** problems (3 errors in `notification-bell.tsx`/`theme-provider.tsx`, 4 unused-var warnings in legacy files). Nothing from Phases 1–4 work. |
-| Does it run? | ⚠️ **Never runtime-verified.** The greenfield schema has never been applied to any Supabase project. `.env.local` still points at the OLD DeadlineTracker DB — running the app today would hit a mismatched schema. |
-| What works (once a DB exists)? | Auth + 3 onboarding paths, Clients (CRUD/addresses/persons/portal invites), Documents (upload/versions/approve-reject, staff + portal), **Tasks (list/detail/stage machine/assignment/comments/documents/activity), portal task view**. |
-| What is still legacy (compiles, but coded against the old schema)? | `/dashboard`, `/team`, `/templates`, `/settings` pages; `components/task-card.tsx`; `lib/activity.ts`, `lib/notifications.ts` (now orphaned). |
-| Biggest risks right now | (1) No commits — one bad script loses everything. (2) Zero runtime/RLS verification. (3) Legacy routes are live and reachable by staff logins. |
-| Verification gates | `npm run build` and `npm run lint` only. No tests of any kind. |
+| What phase are we in? | **Phase 7 in progress** (runtime verification, no new product code). A committed script suite (`scripts/verify/*.mjs`, admin API + Playwright, `playwright` added as a devDependency) has replaced the old ad-hoc smoke sessions: `01-setup-test-data` provisions a full fake firm (1 partner, 2 employees, 2 clients, 4 tasks incl. one with a reviewer); `02-stage-matrix` (full employee/partner/reviewer stage-transition matrix incl. one partner force + one illegal transition rejected at the raw PostgREST level, all associated notifications) is **green**; `03-comments-and-documents` (internal vs client-visible comment isolation, document upload/version/approve/reject, attach-existing, notifications) is **green**. Still pending: `04-portal-e2e.mjs` is written but **not yet run** (no results file), recurrence spawn is not yet covered by any script, and the 3-JWT per-role RLS smoke test hasn't been written. Working tree currently has uncommitted changes (`package.json`/`package-lock.json` for the `playwright` dep, `project_context.md`, new untracked `scripts/`) — not yet committed. |
+| Does it build? | ✅ `npm run build` clean (incl. TypeScript). ✅ `npm run lint` — only the same 2 **pre-existing** errors in `notification-bell.tsx` (unrelated effect/immutability patterns, not touched) + 4 unused-var warnings in legacy-ish files. `theme-provider.tsx`'s 2 pre-existing lint errors were fixed in Phase 6. |
+| Does it run? | ✅ **Runtime-verified against a live Supabase project** (`fwmmdyebvzncpezdwnxm.supabase.co` — `.env.local` no longer points at the old DeadlineTracker DB; schema has been applied). Phase 7 has now automated the two biggest previously-unexercised surfaces: the **full stage-machine transition matrix** (employee arrows, partner force, illegal transition rejected by the DB trigger even via raw PostgREST, reviewer-gating on `in_progress→completed`) and **comments/documents** (internal vs client-visible isolation, upload/version/approve/reject, attach-existing, notifications) — both scripted and green. **Still not yet exercised:** portal accept-invite → client_user login end-to-end (script written, not run), recurrence spawning, and per-role RLS isolation (no 3-JWT smoke test yet). |
+| What works? | Auth + 3 onboarding paths, Clients (CRUD/addresses/persons/portal invites), Documents (upload/versions/approve-reject, staff + portal), Tasks (list/detail/stage machine/assignment/comments/documents/activity), portal task view, **Team (departments + membership), Templates (department-scoped), Settings (firm rename), Dashboard (partner/employee split)** — all now working against the real schema. Full teal-accent light/dark theme across every page. |
+| What is still architecturally split (works, but two parallel type systems)? | Dashboard (`admin-dashboard.tsx`/`member-dashboard.tsx`) and `components/task-card.tsx` were fixed to use correct field names (`firm_id`, `department_id`, role `'partner'`) but still use the **legacy `Task`/`TaskWithDetails` types**, not Phase 4's `FirmTask*` model used by `/tasks`. Two task type systems now coexist, both valid against the schema — unifying them is the main remaining cleanup (see §6). |
+| Biggest risks right now | (1) Still no automated RLS-isolation tests — dual-layer app checks are verified by hand-testing, not proven per-role. (2) Portal/client_user path and the stage-machine's illegal-transition rejection haven't been runtime-exercised yet. (3) Two parallel task type systems (`Task` vs `FirmTask`) increase the chance of a future edit touching the wrong one. |
+| Verification gates | `npm run build` and `npm run lint`, plus the new `scripts/verify/*.mjs` suite (admin API + Playwright, run manually with `node`) — 2 of its 4 planned steps are green (stage matrix, comments/documents), 1 is written but unrun (portal e2e), and no RLS-policy test suite exists yet. Not wired into CI; still run by hand. |
 
 ---
 
@@ -39,23 +39,24 @@ Subscription billing (plans → firm_subscriptions → subscription_invoices) is
 | Layer | Technology |
 |---|---|
 | Framework | Next.js **16.2.4** (App Router, Server Components, Server Actions) — ⚠️ this version has breaking changes vs. older Next.js; per `AGENTS.md`, consult `node_modules/next/dist/docs/` before writing framework code. Known conventions used: `params` **and** `searchParams` are Promises and must be awaited. |
-| UI | React 19.2.4, Tailwind CSS 4, lucide-react icons, hand-rolled UI kit in `src/components/ui/` (Button/Input/Select/Textarea/Modal/Card/Badge/EmptyState) |
+| UI | React 19.2.4, Tailwind CSS 4 (CSS-first — color tokens live in a `@theme` block in `globals.css`, no `tailwind.config.*`), lucide-react icons, hand-rolled UI kit in `src/components/ui/` (Button/Input/Select/Textarea/Modal/Card/Badge/EmptyState) — see §4.8 for the design system |
 | Backend | Supabase (Postgres + Auth + Storage + RLS), accessed via `@supabase/ssr` / `@supabase/supabase-js`; **untyped client** (no generated `Database` generics) |
 | Language | TypeScript 5, ESLint 9 |
+| Fonts | next/font/google: **Plus Jakarta Sans** (`--font-sans`, body/UI) + Geist Mono (`--font-geist-mono`, invite codes only) |
 | Email | **Not wired** — Resend planned; client invites currently `console.log` the link |
 
 There is no test suite. `npm run build` and `npm run lint` are the current verification gates.
 
 ---
 
-## 3. Directory structure (file-level, after Phase 4)
+## 3. Directory structure (file-level, after Phase 6)
 
 ```
 CA prod 1/
 ├── AGENTS.md / CLAUDE.md              # "This is NOT the Next.js you know" warning
 ├── REFERENCE_ARCHITECTURE.md          # Original DeadlineTracker writeup (the source pattern)
 ├── project_context.md                 # ★ THIS FILE — single source of truth for project state
-├── .env.local                         # ⚠️ Still points at the OLD DeadlineTracker Supabase project
+├── .env.local                         # Points at the live CA-firm Supabase project (since Ph5) — holds a service-role key
 ├── supabase/
 │   ├── ca-firm/                       # ★ THE NEW SYSTEM (DB source of truth)
 │   │   ├── schema.sql                 # Greenfield schema: 23 tables, helpers, triggers, RLS, storage policies (~1,680 lines)
@@ -85,10 +86,15 @@ CA prod 1/
 │   │       │   └── [id]/
 │   │       │       ├── page.tsx       # Server detail page — composes all task components
 │   │       │       └── loading.tsx
-│   │       ├── dashboard/             # admin/member dashboards                              [LEGACY]
-│   │       ├── team/                  # teams UI                                             [LEGACY]
-│   │       ├── templates/             # template CRUD                                        [LEGACY]
-│   │       ├── settings/              # org settings                                         [LEGACY]
+│   │       ├── dashboard/             # admin/member dashboards       [Ph5: role/department fields fixed against
+│   │       │                          #   the real schema; STILL on the legacy Task/TaskWithDetails type + task-card.tsx,
+│   │       │                          #   not Ph4's FirmTask model — works, but two type systems now coexist]
+│   │       ├── team/                  # ★ Ph5 rebuilt — departments + department_members (not teams/team_members);
+│   │       │                          #   has_permission('team.view'/'team.manage') gating; no lead/role-promotion UI
+│   │       │                          #   (no schema equivalent — CA roles are fixed at signup)               [PORTED Ph5]
+│   │       ├── templates/             # ★ Ph5 fixed — firm_id + has_permission('templates.manage'); added
+│   │       │                          #   optional department_id scoping to the create/edit form              [PORTED Ph5]
+│   │       ├── settings/              # ★ Ph5 fixed — firm_id, `firms` table (not `organizations`), role='partner' [PORTED Ph5]
 │   │       └── notifications-actions.ts
 │   ├── components/
 │   │   ├── task/                      # ★ Phase 4 composable task components
@@ -104,12 +110,15 @@ CA prod 1/
 │   │   │   └── task-documents.tsx     # DocumentsSection wrapper + "attach existing document" modal
 │   │   ├── documents-section.tsx      # SHARED staff+portal documents UI; Ph4: optional taskId prop, title prop
 │   │   ├── client-form.tsx            # Ph3 client form (addresses/persons as JSON sub-forms)
-│   │   ├── task-card.tsx              # LEGACY — kept ONLY because dashboard pages import it
-│   │   ├── dashboard-shell.tsx / sidebar.tsx / topbar.tsx   # Shell; sidebar role-fixed in Ph4
-│   │   ├── notification-bell.tsx      # Polls notifications; type→icon map (Ph4 added document_uploaded)
-│   │   ├── priority-badge.tsx         # Used by both legacy and new code
-│   │   ├── theme-provider.tsx
-│   │   └── ui/                        # badge, button, card, empty-state, input, modal, select, textarea
+│   │   ├── task-card.tsx              # LEGACY type, still kept — only dashboard pages import it; works against
+│   │   │                              #   the real schema (Task type's fields fixed in Ph5) but not yet unified onto FirmTask
+│   │   ├── dashboard-shell.tsx / sidebar.tsx / topbar.tsx   # Shell; sidebar role-fixed Ph4; theme toggle moved
+│   │   │                              #   sidebar→topbar in Ph6 (useSyncExternalStore for hydration-safe icon)
+│   │   ├── notification-bell.tsx      # Polls notifications; type→icon map (Ph4 added document_uploaded); Ph6 retheme only
+│   │   ├── priority-badge.tsx         # ★ Ph6: rewired to token families (low→muted, medium→info, high→warning,
+│   │   │                              #   critical→danger) — was raw Tailwind colors with no dark-mode handling at all
+│   │   ├── theme-provider.tsx         # ★ Ph6: rewritten with a lazy useState initializer — was 2 pre-existing lint errors
+│   │   └── ui/                        # badge, button, card, empty-state, input, modal, select, textarea — all Ph6-retokened
 │   └── lib/
 │       ├── auth.ts                    # getAuthContext() / getAuthProfile() — the per-request auth helpers
 │       ├── provisioning.ts            # Service-role provisioning (callback + onboarding retry)
@@ -119,7 +128,9 @@ CA prod 1/
 │       │   ├── comments.ts            # SHARED comment actions ('use server'): add/update/delete — staff + portal
 │       │   └── activity.ts            # logTaskActivity() + notifyUser(s)() via create_notification RPC
 │       ├── supabase/                  # client.ts / server.ts / admin.ts (service-role) / middleware.ts
-│       ├── types.ts                   # CA types (FirmTask*, Department, TaskStage, …) + LEGACY transitional aliases
+│       ├── types.ts                   # CA types (FirmTask*, Department, TaskStage, …) + LEGACY transitional aliases;
+│       │                              #   Ph5: Team/TeamMember/TeamWithDetails/TeamMemberWithProfile → Department/
+│       │                              #   DepartmentMember/DepartmentWithMembers/DepartmentMemberWithProfile
 │       ├── ca-options.ts              # Business/address types + GSTIN/PAN/TAN/CIN/DIN/PIN regexes
 │       ├── task-options.ts            # ★ Stage machine map (mirrors DB trigger), stage/transition labels,
 │       │                              #   priority/recurrence options, activity-feed label map
@@ -129,7 +140,9 @@ CA prod 1/
 │       └── notifications.ts           # LEGACY (organization_id) — ORPHANED after Ph4, delete with dashboard port
 ```
 
-**"PORTED" vs "LEGACY":** ported code uses `firm_id`, `getAuthContext()`, and the new role model. Legacy code still queries `organization_id`, `teams`, and `role IN ('admin','member')` — it compiles (via deliberate transitional aliases in `lib/types.ts`) but **will not work against the new schema** until ported.
+**"PORTED" vs "LEGACY":** ported code uses `firm_id`, `getAuthContext()`, and the new role model. Legacy code still queries `organization_id`, `teams`, and `role IN ('admin','member')` — it compiles (via deliberate transitional aliases in `lib/types.ts`) but **will not work against the new schema** until ported. After Phase 5, the only surface still on the legacy `Task`/`TaskWithDetails` types is the dashboard + `task-card.tsx` — everything else (`/team`, `/templates`, `/settings`) is fully ported.
+
+**Files touched in Phase 5 (legacy-page port) + Phase 6 (reskin), bundled in one commit (`abb4af8`):** `lib/provisioning.ts` (onboarding race fix), `dashboard/page.tsx` + `admin-dashboard.tsx` + `member-dashboard.tsx`, all of `team/*` (rewritten), `templates/*` + `template-form.tsx`, `settings/actions.ts` + `settings-page-client.tsx`, `lib/types.ts` (Department* types, `TaskTemplate`/`Task` field fixes), `globals.css` (full rewrite — `@theme` token block), `layout.tsx` (font), `theme-provider.tsx` (rewrite), `topbar.tsx`/`sidebar.tsx` (toggle relocation), every file in `components/ui/`, and ~50 other page/component files for the color-token sweep (see §4.8).
 
 **Files deleted in Phase 4:** `tasks/[id]/task-detail-client.tsx`, `tasks/[id]/actions.ts` (task_attachments-based), `components/task-form.tsx` (legacy standalone form).
 
@@ -162,8 +175,8 @@ Every tenant-scoped table carries `firm_id`. Security is enforced **in the datab
 | `documents.upload` | ✅ true | documents INSERT (staff path) | upload actions |
 | `documents.approve` | ❌ false | documents UPDATE (approval fields **and any other column** — this is why "attach existing" needs it) | approve/reject/attach actions |
 | `billing.view` / `billing.manage` | ❌ | subscriptions/invoices SELECT | not built yet |
-| `team.view` / `team.manage` | ✅ / ❌ | departments + department_members CRUD | not built yet (Phase 5) |
-| `templates.manage` | ❌ false | task_templates CUD | not built yet (templates page legacy) |
+| `team.view` / `team.manage` | ✅ / ❌ | departments + department_members CRUD | ✅ `requireTeamView()`/`requireTeamManage()` in `team/actions.ts` (Ph5) |
+| `templates.manage` | ❌ false | task_templates CUD | ✅ `requireTemplatesManage()` in `templates/actions.ts` (Ph5) |
 
 ### 4.2 Schema (supabase/ca-firm/schema.sql — 23 tables)
 
@@ -185,7 +198,7 @@ Key mechanics (all trigger-enforced in the DB):
 
 `ROLES_AND_RLS.md` documents flags **F1–F9** — the nine places the DeadlineTracker pattern was unsafe or insufficient and what replaced it — plus the client-isolation proof.
 
-### 4.3 Auth & onboarding (Phase 2)
+### 4.3 Auth & onboarding (Phase 2; race condition fixed Phase 5)
 
 Three onboarding paths, all converging on `lib/provisioning.ts` (service-role provisioning — there are deliberately **no INSERT policies** on profiles/firms, fixing flaw F3):
 
@@ -194,6 +207,8 @@ Three onboarding paths, all converging on `lib/provisioning.ts` (service-role pr
 3. **Client portal invite** → partner/permitted staff creates `client_portal_invitations` row; accept flow at `/portal/accept-invite` is **auto-confirmed** (`admin.createUser` + `email_confirm: true` + immediate sign-in — possessing the invite token *is* the email proof). Invite email delivery is currently a `console.log` stub (`TODO(resend)` in `clients/portal-actions.ts`).
 
 `getAuthContext()` (`lib/auth.ts`) is the single per-request auth helper: session → profile → firm + `is_super_admin()` RPC in parallel; returns `clientId` for portal users and a deprecated `organization` alias so unported pages compile. `getAuthProfile()` is the lighter variant for server actions. Role-aware middleware (`lib/supabase/middleware.ts`) routes staff to dashboard prefixes and client_users to `/portal` (all `/portal/*` subpaths included); `/portal/accept-invite` is public.
+
+**Onboarding race condition (found + fixed Phase 5):** `/onboarding` does a check-then-insert with no locking, and Next.js genuinely fires more than one request to it within a single navigation (confirmed live — two `GET /onboarding` ~250ms apart in the dev log). The losing request hit `profiles_pkey` (23505) and — before the fix — surfaced a false "we couldn't finish setting up your account" error to a user whose account had actually provisioned fine via the winning request. Fixed via `resolveProfileRace()` in `provisioning.ts`: on a 23505 from the `profiles` insert, re-select the profile the winner created and return `{ ok: true }` instead of failing.
 
 ### 4.4 Clients & documents (Phase 3)
 
@@ -248,9 +263,29 @@ Three onboarding paths, all converging on `lib/provisioning.ts` (service-role pr
 - Fixed a latent Phase 3 bug in the process: the `visible_to_client` **checkbox never submitted `false`** (unchecked checkboxes don't post). Both the task form and `documents-section` now use a hidden-input mirror.
 - Detail-page `canUpdate` (drives which panels are interactive) mirrors the UPDATE policies: partner ∥ assigned-to-me ∥ (`tasks.update_department` ∧ task's department ∈ mine, via `get_user_department_ids` RPC).
 - Employees' create-form department options are pre-scoped to their own departments (matching the INSERT policy) — partners get all.
-- Task create consumes `task_templates` read-only (title/description/priority/recurrence/department pre-select) even though the templates management page is still legacy.
+- Task create consumes `task_templates` read-only (title/description/priority/recurrence/department pre-select); the templates management page itself was ported in Phase 5 (§4.6).
 
-**Legacy-compatibility surface (delete with the dashboard port):** `components/task-card.tsx` is still imported by the unported dashboard pages, so `tasks/actions.ts` retains `markTaskCompleteAction` (now routed through the stage machine: partner force; employee only where the arrows allow completion) and `deleteTaskAction` with their old signatures.
+**Legacy-compatibility surface (delete when the dashboard is unified onto FirmTask):** `components/task-card.tsx` is still imported by the dashboard pages, so `tasks/actions.ts` retains `markTaskCompleteAction` (now routed through the stage machine: partner force; employee only where the arrows allow completion) and `deleteTaskAction` with their old signatures. Dashboard itself now works correctly against the real schema (Ph5) — this surface is about the type system, not correctness.
+
+### 4.6 Team → Departments, Templates, Settings, Dashboard (Phase 5)
+
+The last four pages inherited wholesale from DeadlineTracker were never touched in Phases 1–4: they still assumed the old data model (`profiles.organization_id`, an `organizations` table, a `teams`/`team_members` model, `role IN ('admin','member')`) — none of which exist in the CA schema. `/team` and `/templates` were **completely unreachable** (their role gate `role !== 'admin'` is never true for a CA user), and even with that fixed every action would have failed on the wrong column/table names. Phase 5 ported all four:
+
+- **Team (`/team`) — rebuilt around `departments`/`department_members`, not a port of the old teams UI.** The old model (freeform team name/description/lead, arbitrary membership) doesn't map onto the schema's actual concept: departments are **seeded 6-per-firm** by the `seed_default_departments()` trigger (GST, Income Tax, Audit, ROC, Accounting, Payroll) with partners able to add custom ones, and have no `lead_id` or role-promotion concept (CA roles are fixed at signup — partner via create-firm, employee via invite code — there is no in-app admin/member toggle). So the old "team lead" picker and `changeRoleAction` (promote/demote) were **dropped, not ported** — no schema equivalent. Departments use an `is_active` toggle instead of hard delete, mirroring the Clients module's no-hard-delete precedent. Permission gating follows the `requireClientsManage()`-style pattern from `clients/actions.ts`: `requireTeamView()`/`requireTeamManage()` via `getAuthProfile()` + `has_permission()`. Invite-code regeneration kept, now a direct `firms.invite_code` update (no `regenerate_invite_code_for_org` RPC exists in this schema).
+- **Templates (`/templates`) — a much smaller fix**, since `task_templates`'s columns (title/description/default_priority/recurring_rule/checklist_items) already matched almost exactly. Fixed `organization_id` → `firm_id` throughout `actions.ts`, added `requireTemplatesManage()` (same pattern as Team), and added an optional `department_id` scope to the create/edit form (the column already existed in the schema, just unused by the UI).
+- **Settings (`/settings`)** — `updateOrganizationAction` fixed from `profiles.organization_id`/`organizations` table to `profiles.firm_id`/`firms` table, role check `'admin'` → `'partner'`.
+- **Dashboard (`/dashboard`)** — role branch `'admin'` → `'partner'`; `admin-dashboard.tsx`'s team-workload analytics renamed from the nonexistent `assigned_team_id` to the real `tasks.department_id` column, and its `teams` query became a `departments` query. **Not** rebuilt onto Ph4's `FirmTask` model — see the type-system split noted in §0/§6.
+- **Cosmetic, same phase:** the topbar/settings role badge hardcoded `'Admin'/'Member'` labels (checked `role === 'admin'`, which is never true) → now shows Partner/Employee correctly.
+
+### 4.7 Design system / reskin (Phase 6)
+
+Pure visual pass — **zero schema/data-fetching/layout changes** — to replace the inherited DeadlineTracker indigo/Geist look with a calmer teal "fintech for CAs and their non-technical clients" identity, in both light and dark mode.
+
+- **Color tokens** live in a Tailwind v4 `@theme` block in `globals.css` (light values) with a plain `.dark { }` override block (dark values) — the standard Tailwind v4 CSS-variable dark-mode pattern; every existing `var(--color-x)` / `bg-[var(--color-x)]` reference across the app keeps working unchanged. Token families: surfaces (`background`/`surface`/`border`/`muted`), text (`text`/`text-secondary`/`text-muted`, names kept from before), brand (`accent`/`accent-hover`/`accent-foreground`/`accent-muted`, teal, defined once per mode so the brand hue is a 2–4 line edit), and four status families (`success`/`warning`/`danger`/`info`, each with `-bg`/`-text`/`-border`) — `info` is a genuinely separate blue, not a reuse of the accent, and a `danger-foreground`/`accent-foreground` pair was added after a real contrast bug surfaced: white button/badge text was illegible against the bright dark-mode accent (`#2dd4bf`) and danger (`#f87171`) colors (verified via a throwaway WCAG contrast-ratio script; near-black foregrounds used instead in dark mode). Background/surface are near-black-not-`#000`/off-white-not-`#fff` per the brief.
+- **Typography:** `Geist` → `Plus Jakarta Sans` (`next/font/google`, var renamed `--font-sans`); `Geist_Mono` kept for the one legitimate monospace use (invite codes).
+- **Theme mechanism:** `theme-provider.tsx` had 2 pre-existing `react-hooks/set-state-in-effect` lint errors (calling `setTheme` inside a mount effect) — fixed with a lazy `useState(() => ...)` initializer reading `localStorage`/`matchMedia` once, collapsed to a single effect that only syncs theme → DOM class + localStorage. The toggle itself was moved from the sidebar into the topbar (icon-only Sun/Moon button); its mount-safe rendering uses `useSyncExternalStore` (not a mounted-state-in-effect, which would have reintroduced the same lint error) to avoid a hydration mismatch for returning visitors with a saved dark preference.
+- **Sweep:** every file in `components/ui/` plus ~50 page/feature components had hardcoded Tailwind palette classes (`bg-gray-100`, `text-emerald-700`, `border-red-200`, raw `bg-blue-50`, …) replaced with tokens — including `priority-badge.tsx` (previously **no dark-mode handling at all** — light pastel chips that would have looked broken on a dark card) and 7 near-identical loading-skeleton files (previously hardcoded `#e2e8f0`/`#f1f5f9` shimmer hex, genuinely broken in dark mode). The landing page (`app/page.tsx`) was included even though it wasn't in the original verification checklist, since leaving it unskinned would have been the most visible remaining "old template" surface; its one permanently-dark decorative CTA banner section intentionally keeps a couple of literal (non-token) colors since that section doesn't follow the page's own light/dark toggle by design (same pattern the sidebar already used).
+- **Verified** via Playwright screenshots in both themes across login/signup, dashboard, clients + client-detail, tasks + task-detail (real stage/priority/overdue badges together), team, templates, and settings. `npm run build` / `npm run lint` clean.
 
 ---
 
@@ -258,30 +293,34 @@ Three onboarding paths, all converging on `lib/provisioning.ts` (service-role pr
 
 | Phase | Date | Delivered | Status |
 |---|---|---|---|
-| **1 — Schema** | 2026-07-07 | Greenfield `ca-firm/schema.sql` (23 tables, helpers, triggers, RLS, storage policies) + `ROLES_AND_RLS.md` | ✅ Written, **not yet applied to any Supabase project** |
-| **2 — Auth plumbing** | 2026-07-07 | Signup/login/onboarding, three onboarding paths, provisioning, getAuthContext, role-aware middleware, transitional types | ✅ Builds & lints clean; **runtime unverified** (no live DB) |
-| **3 — Clients + documents** | 2026-07-07 | Client CRUD + portal invites, documents with versioning/approval, client portal page | ✅ Builds & lints clean; **runtime unverified** |
-| **4 — Task Management** | 2026-07-07 | Task list (server-side URL-driven search/filter/sort/pagination), task detail (10 composable components), stage-machine UI mirroring the DB trigger, assignment panel, internal/client-visible comments, task-linked documents (upload/attach/versions/approve-reject), activity feed + stage history, recurrence spawning, portal task list + portal task page, notifications via create_notification RPC, sidebar role fix, checkbox-submit bugfix | ✅ Builds & lints clean; **runtime unverified** |
-| 5+ | — | See §7 | ⏳ Not started |
+| **1 — Schema** | 2026-07-07 | Greenfield `ca-firm/schema.sql` (23 tables, helpers, triggers, RLS, storage policies) + `ROLES_AND_RLS.md` | ✅ Written; **applied** — live Supabase project since Ph5 |
+| **2 — Auth plumbing** | 2026-07-07 | Signup/login/onboarding, three onboarding paths, provisioning, getAuthContext, role-aware middleware, transitional types | ✅ Builds & lints clean; runtime-verified Ph5 (race condition found + fixed) |
+| **3 — Clients + documents** | 2026-07-07 | Client CRUD + portal invites, documents with versioning/approval, client portal page | ✅ Builds & lints clean; client CRUD runtime-verified Ph5 |
+| **4 — Task Management** | 2026-07-07 | Task list (server-side URL-driven search/filter/sort/pagination), task detail (10 composable components), stage-machine UI mirroring the DB trigger, assignment panel, internal/client-visible comments, task-linked documents (upload/attach/versions/approve-reject), activity feed + stage history, recurrence spawning, portal task list + portal task page, notifications via create_notification RPC, sidebar role fix, checkbox-submit bugfix | ✅ Builds & lints clean; task creation + badges smoke-tested Ph6, stage/document/portal flows still unverified |
+| **5 — Legacy-page port** | 2026-07-08 | Found by actually running the app: onboarding race condition (false "couldn't finish setting up" error) fixed; Team rebuilt onto departments; Templates + Settings + Dashboard fixed to the real schema/role model; role-badge label bug fixed | ✅ Builds & lints clean; runtime-verified via Playwright (signup→login, department/template CRUD, firm rename, invite-code regen) against a live Supabase project |
+| **6 — Reskin** | 2026-07-08/09 | Teal-accent token system (`@theme`, full light/dark palettes, WCAG-AA verified), Plus Jakarta Sans, theme-provider lint fix + topbar toggle relocation, full color-token sweep of the UI kit + ~50 files | ✅ Builds & lints clean (theme-provider's pre-existing lint errors now fixed too); verified via Playwright screenshots in both themes across the full nav |
+| **7 — Runtime verification** | 2026-07-09 (in progress) | New `scripts/verify/` suite (admin API + Playwright, `playwright` added as devDependency): `01-setup-test-data` (fake firm/users/clients/tasks), `02-stage-matrix` (full transition matrix + partner force + illegal-transition rejection + notifications), `03-comments-and-documents` (internal/client-visible isolation, upload/version/approve/reject/attach, notifications) | 🟡 Steps 1–3 green; step 4 (`04-portal-e2e.mjs`) written but not run; recurrence spawn + RLS 3-JWT smoke test not started; uncommitted |
+| 8+ | — | See docs/ROADMAP.md | ⏳ Not started |
 
 **Module status (done vs left):**
 
 | Module | State |
 |---|---|
-| Auth (login/signup/onboarding/callback) | ✅ Ported (Ph2) |
+| Auth (login/signup/onboarding/callback) | ✅ Ported (Ph2); onboarding race condition fixed (Ph5) |
 | Clients (+ addresses, persons, portal invites) | ✅ Ported (Ph3) |
-| Documents (upload/version/approve) — staff, portal, tasks | ✅ Built (Ph3), task-aware (Ph4) |
-| Tasks (list, detail, stage machine, assignment, comments, activity, portal tasks) | ✅ Rebuilt (Ph4) |
-| Client portal | 🟡 Tasks + documents done; still missing: "assigned contact" RPC, notification surfacing, pagination of task/doc lists |
-| Dashboard (admin/member) | ❌ Legacy — checks `role==='admin'`, queries `teams`; keeps `task-card.tsx` + 2 legacy-compat action exports alive |
-| Team → **Departments + permissions UI** | ❌ Legacy — Phase 5 target: member list, department membership, per-employee `user_permissions` editor, invite-code management |
-| Templates | ❌ Legacy page (schema `task_templates` already consumed read-only by task create) |
-| Settings | ❌ Legacy (writes assume `role='admin'`) |
-| Notifications helpers (`lib/notifications.ts`, `lib/activity.ts`) | ❌ ORPHANED legacy — nothing imports them since Ph4; delete with dashboard port |
+| Documents (upload/version/approve) — staff, portal, tasks | ✅ Built (Ph3), task-aware (Ph4); upload/version/approve/reject/attach-existing runtime-verified Ph7 (`03-comments-and-documents.mjs`) |
+| Tasks (list, detail, stage machine, assignment, comments, activity, portal tasks) | ✅ Rebuilt (Ph4); full stage-transition matrix (incl. partner force + illegal-transition rejection) runtime-verified Ph7 (`02-stage-matrix.mjs`) |
+| Client portal | 🟡 Tasks + documents done; still missing: "assigned contact" RPC, notification surfacing, pagination of task/doc lists; **no client_user login has been runtime-tested yet** |
+| Dashboard (admin/member) | 🟡 **Ported (Ph5)** — role/department fields fixed against the real schema — but still on the legacy `Task`/`TaskWithDetails` type + `task-card.tsx`, not Ph4's `FirmTask` model. Retheme'd (Ph6) |
+| Team → **Departments + membership** | ✅ Rebuilt (Ph5) — no lead/role-promotion concept ported (no schema equivalent); per-employee `user_permissions` editor still not built |
+| Templates | ✅ Ported (Ph5) — `firm_id` + `has_permission`, department scoping added |
+| Settings | ✅ Ported (Ph5) — firm rename verified runtime |
+| Notifications helpers (`lib/notifications.ts`, `lib/activity.ts`) | ❌ Still ORPHANED — nothing imports them; delete when the dashboard is unified onto FirmTask |
 | Super-admin surface (`/admin`) | ❌ Not started (`isSuperAdmin` flag ready in getAuthContext) |
 | Billing / payment webhooks / plan enforcement | ❌ Not started (schema + DB helpers ready) |
 | Email (Resend) | ❌ Not started (console.log stub) |
-| Tests / RLS verification | ❌ Nothing exists |
+| Tests / RLS verification | ❌ No automated suite; Ph5/Ph6 verification was ad-hoc Playwright smoke sessions, not committed tests |
+| Visual design system | ✅ Built (Ph6) — teal accent, full light/dark, Plus Jakarta Sans |
 
 ---
 
@@ -289,53 +328,47 @@ Three onboarding paths, all converging on `lib/provisioning.ts` (service-role pr
 
 ### Security items (open)
 
-1. **RLS not finalized / never deployed.** The entire security model exists only as SQL text — none of it has run against a real database. The Ph3 relaxation of the documents client INSERT policy (`task_id IS NULL` allowed) was ad-hoc; the user has explicitly deferred a full RLS re-review to the end. **Until the schema is applied and policies are exercised with real JWTs per role, all isolation guarantees are theoretical.**
-2. **`.env.local` points at the old DeadlineTracker Supabase project** (and holds a service-role key — rotate when creating the new project; it must never reach a client bundle or repo).
+1. **RLS is deployed and partially proven, but not yet per-role.** Ph7's `02-stage-matrix.mjs` and `03-comments-and-documents.mjs` scripts now exercise multi-actor flows (partner P1, two employees E1/E2, illegal transitions attempted via raw PostgREST and confirmed rejected by the DB trigger) against the live project, so it's no longer just one partner clicking around — but there is still no systematic per-policy pass and no dedicated 3-JWT RLS smoke test. The Ph3 relaxation of the documents client INSERT policy (`task_id IS NULL` allowed) was ad-hoc; the user has explicitly deferred a full RLS re-review to the end. **Still outstanding: the entire client_user/portal path has not been runtime-tested at all** (`04-portal-e2e.mjs` is written but not yet run), and there is still no automated per-role RLS isolation test.
+2. ~~`.env.local` points at the old DeadlineTracker Supabase project~~ **Resolved** — it now points at the live CA-firm project (`fwmmdyebvzncpezdwnxm.supabase.co`). Still true: the service-role key it holds must never reach a client bundle or the repo.
 3. **Client-invite links are printed to the server console** (Resend stub). Dev-only acceptable.
-4. **Legacy pages are live routes against the wrong model:** `/team`, `/templates`, `/settings`, `/dashboard` are reachable by any staff login and perform writes coded for the old permission model. Consider stubbing/feature-gating until ported.
+4. ~~Legacy pages live against the wrong model~~ **Resolved (Ph5)** — `/team`, `/templates`, `/settings`, `/dashboard` now write against the real schema/role model. (Dashboard still uses the legacy `Task` type internally — see the engineering-debt item below — but that's a type-unification concern, not a broken-write concern; its writes go through the same fixed role/field checks.)
 5. **`tasks.assign` is app-layer-only.** No RLS policy references it; DB-level reassignment is possible for partners, the assignee themselves, and `tasks.update_department` holders via the generic UPDATE policies. Decide in the RLS pass whether to add a dedicated policy branch or accept the app gate.
 6. **No DB constraint that a linked document belongs to the task's client** (`documents.client_id` vs `tasks.client_id`) — enforced only in `attachDocumentToTaskAction` and upload paths. A raw PostgREST write by a permitted user could link cross-client. Candidate for a trigger in the RLS pass.
 7. **Portal "assigned contact" not yet built** — must be a narrow SECURITY DEFINER RPC, *not* a widened profiles policy (client_users deliberately cannot enumerate staff).
 8. **Plan/seat/storage limits are not enforced anywhere yet.** DB helpers exist (`get_firm_plan`, `firm_has_feature`, `storage_used_bytes`) but no server action checks them.
-9. **No rate limiting / abuse controls** on public endpoints (signup, invite-code lookup, accept-invite).
+9. **No rate limiting / abuse controls** on public endpoints (signup, invite-code lookup, accept-invite). Also worth noting operationally: Supabase's own signup-email rate limit was hit repeatedly during Ph5/Ph6 testing — real signups could hit this too under load; a bulk-testing workaround (admin API user creation) exists but isn't a production fix.
 10. **Storage rollback is best-effort** — a crash mid-upload can orphan a storage object (no reconciliation job).
 
 ### Security items (already fixed by design — don't regress)
 
-The nine DeadlineTracker flaws (F1–F9 in `ROLES_AND_RLS.md`): self-escalation via profile UPDATE (F1 — trigger guard), enumerable orgs via `USING(true)` (F2 — RPCs), join-any-firm-as-admin self-INSERT (F3 — service-role-only provisioning), notification forgery (F7 — RPC), cascade-deleting statutory records (F6), etc. Phase 4 additions that must not regress: stage machine authority stays in the DB trigger; `task_stage_history` stays trigger-only-writable; client comments stay force-visible; all notifications stay on the `create_notification` RPC path.
+The nine DeadlineTracker flaws (F1–F9 in `ROLES_AND_RLS.md`): self-escalation via profile UPDATE (F1 — trigger guard), enumerable orgs via `USING(true)` (F2 — RPCs), join-any-firm-as-admin self-INSERT (F3 — service-role-only provisioning), notification forgery (F7 — RPC), cascade-deleting statutory records (F6), etc. Phase 4 additions that must not regress: stage machine authority stays in the DB trigger; `task_stage_history` stays trigger-only-writable; client comments stay force-visible; all notifications stay on the `create_notification` RPC path. Phase 5 addition that must not regress: `resolveProfileRace()` in `provisioning.ts` — don't reintroduce a bare check-then-insert in the onboarding path.
 
 ### Engineering debt
 
-- **No version control in practice.** The entire Phase 1–4 diff lives in one uncommitted working tree. *Highest-priority fix.*
-- **Transitional aliases** in `lib/types.ts` (`Organization = Firm`, `UserRole` includes `'admin'|'member'`, legacy `Task*` types) + deprecated `organization` field on getAuthContext + `components/task-card.tsx` + `markTaskCompleteAction`/`deleteTaskAction` legacy exports — all exist only for the unported dashboard/team/templates/settings. Remove together when the last legacy module is ported.
-- **`lib/activity.ts` + `lib/notifications.ts` are orphaned** (no importers since Ph4) — delete with the dashboard port.
+- ~~No version control in practice~~ **Resolved** — 3 commits exist (`37ae6b0`/`e9607ad`/`abb4af8`), working tree clean. Still no remote — consider pushing to a private GitHub repo.
+- **Two parallel task type systems now coexist:** Ph4's `FirmTask*` (used by `/tasks`) and the legacy `Task`/`TaskWithDetails` (used by the dashboard + `task-card.tsx`, field-names fixed in Ph5 so it's *correct*, just not *unified*). A future edit to task shape has to remember to touch both. Unifying the dashboard onto `FirmTask` and deleting `task-card.tsx` + the legacy types is the natural next cleanup, not urgent.
+- **Remaining transitional aliases** in `lib/types.ts` (`Organization = Firm`, `UserRole` includes `'admin'|'member'`) + deprecated `organization` field on `getAuthContext` — narrower than before Ph5 (the `Team*` family is gone, replaced by `Department*`), but still present until the dashboard/type unification above happens.
+- **`lib/activity.ts` + `lib/notifications.ts` are still orphaned** (no importers since Ph4) — delete when the dashboard is unified onto FirmTask.
 - **Stage-change notes** land only in `task_activities`; `task_stage_history.note` is unwritable (trigger-only inserts, trigger doesn't accept a note). If notes must live in the immutable history, extend the trigger (e.g. via a session variable) in the RLS pass.
 - **Task list search doesn't cover client names** (would need an embedded-resource filter or a view; title/description/period only).
 - **Portal task/document lists are unpaginated** — fine for typical client volumes, revisit with real data.
 - **`.update().select().single()` RETURNING caveat** — see §4.5 hardening notes (false "no permission" when a legal update moves the row out of the actor's visibility).
-- **Pre-existing lint errors** (3) in `notification-bell.tsx`, `theme-provider.tsx` + 4 unused-var warnings in legacy files — predate this work; fix with the respective ports.
+- ~~Pre-existing lint errors in `theme-provider.tsx`~~ **Fixed (Ph6).** Still open: 2 pre-existing errors in `notification-bell.tsx` (an effect pattern + a `window.location.href` assignment) + 4 unused-var warnings in legacy-ish files — deliberately not touched by the reskin (visual-only scope); fix opportunistically.
 - **Deprecated `middleware.ts` convention** kept deliberately (build warns; Next 16 wants `proxy.ts`) — revisit when porting completes.
-- **No tests.** RLS especially needs automated policy tests (pgTAP or a JWT-per-role script) once a live DB exists.
+- **No automated tests.** Ph5/Ph6 verification was ad-hoc Playwright smoke scripts run by hand, not a committed suite. RLS especially needs automated policy tests (pgTAP or a JWT-per-role script).
 - Legacy `supabase/` artifacts (old schema, migrations, cron, edge function) should be archived/deleted so nobody applies the wrong schema.
+- **`templates/actions.ts` uses the `TaskTemplate` type** (field names fixed in Ph5) rather than the already-defined `FirmTaskTemplate` type in `lib/types.ts` — minor inconsistency, worth unifying whenever the type-system cleanup above happens.
+- **Statutory recurrence model:** completion-chained spawning is unsafe for statutory compliance (a stalled cycle means the next cycle is never created) — superseded by calendar-driven generation in Phases 9–10; completion-chaining remains for internal recurring tasks only.
 
 ---
 
-## 7. Plan — next steps in recommended order
+## 7. Plan — next steps in recommended order (v2, 2026-07-09)
 
-1. **Put the work under version control** (do this before anything else). Baseline commit of Phases 1–4; preferably a private remote.
-2. **Stand up the greenfield Supabase project.** Apply `supabase/ca-firm/schema.sql`, create the private `client-documents` bucket (then run schema §12 storage policies), verify seeds (`permissions`, `role_permissions`; `plans` needs rows), add ourselves to `platform_admins`, point `.env.local` at it, rotate keys. *Everything else is blocked on this.*
-3. **Runtime-verify Phases 2–4 end-to-end** and fix what breaks:
-   - Auth: partner signup → firm + departments seeded → employee invite-code join → client invite → portal accept.
-   - Clients/documents: CRUD, upload, new version (approval reset), approve/reject, portal view.
-   - **Tasks:** create (each role), filters/sort/pagination URLs, every legal stage transition per role + a forced partner transition + a rejected illegal one (trigger message path), assignment + notifications, internal vs client-visible comments (verify portal isolation!), task-linked upload from both sides, attach-existing, recurrence spawn on completion, activity feed contents, stage history.
-4. **Phase 5 — Port Team → Departments & Permissions:** member list, department membership management, per-employee `user_permissions` editor (grant/revoke overrides — the "view clients but not billing" feature), invite-code management. This also unblocks removing `team.view/manage` from the untested set.
-5. **Phase 6 — Port Dashboard** to the new role model (partner: firm-wide + department workload + waiting_client/overdue counts; employee: assigned ∪ department). Then delete `task-card.tsx`, the legacy-compat action exports, `lib/activity.ts`, `lib/notifications.ts`, and the legacy `Task*`/`Team*` types.
-6. **Phase 7 — Templates & Settings ports** (templates page manages `task_templates` incl. `department_id` + `checklist_items`; settings needs the partner-role rewrite).
-7. **Portal completion:** "assigned contact" SECURITY DEFINER RPC, notification surfacing for clients, pagination.
-8. **Wire Resend** (client invites + task/stage notification emails); remove console.log stub.
-9. **Final RLS pass** (user's stated plan): re-review every policy against finalized app behavior — specifically: Ph3 documents INSERT relaxation, `tasks.assign` (§6.5), doc↔task client-consistency trigger (§6.6), stage-history note (§6 debt), then generate the idempotent policy-recreator script (`fix-rls-policies.sql` equivalent) and add role-JWT policy tests.
-10. **Plan enforcement + billing:** seat/storage checks in server actions, Razorpay/Stripe webhooks writing `firm_subscriptions`/`subscription_invoices` via service role, super-admin `/admin` surface.
-11. **Cleanup:** transitional aliases, legacy `supabase/` artifacts, pre-existing lint errors, archive `REFERENCE_ARCHITECTURE.md` decisions that no longer apply.
+Two governing rules for everything below: **(a)** never build new features on unverified foundations — Phase 7 comes before any CA-core feature work; **(b)** the final RLS pass (Phase 14) happens only once, after the schema stops moving, not once per phase.
+
+Phase list: 7 verify · 8 unify/delete · 9 schema · 10 compliance core · 11 communication · pilot · 12 billing · 13 registers · 14 RLS · 15 SaaS.
+
+**Single source of truth for the plan: `docs/ROADMAP.md`.**
 
 ---
 
@@ -361,6 +394,13 @@ The nine DeadlineTracker flaws (F1–F9 in `ROLES_AND_RLS.md`): self-escalation 
 | `.update().select('id').single()` on all task writes | RLS-denied updates must not report success | 4 |
 | Recurrence spawn is best-effort | An RLS-legitimate denial must not block completing the current task | 4 |
 | Attach-existing gated by `documents.approve` | Linking is an UPDATE on documents; that's the policy that exists — revisit in RLS pass if too strict | 4 |
+| Onboarding race fixed by re-reading the winner's row on 23505, not by locking | Minimal change to an already-working design; a lock would need its own testing | 5 |
+| Team's old "team lead" + role-promotion UI dropped, not ported | No schema equivalent (departments have no `lead_id`; roles are fixed at signup) — porting a nonexistent concept would mean inventing new schema, out of scope for a page-fix pass | 5 |
+| Departments use `is_active` toggle, no hard delete | Mirrors the Clients module's existing no-hard-delete precedent for consistency | 5 |
+| Dashboard's role/field bugs fixed without migrating it onto `FirmTask` | Kept the fix minimal/low-risk; full unification is a separate, non-urgent cleanup (§6/§7) | 5 |
+| Reskin kept the existing `var(--color-x)` arbitrary-value pattern instead of switching call sites to Tailwind `@theme`-generated utility class names | Tailwind's `dark:` variant defaults to `prefers-color-scheme`, not this app's class-based toggle (confirmed zero existing `dark:` usage) — introducing it risked a theme that ignores the manual switch; the CSS-variable-in-`.dark{}` pattern already used everywhere doesn't have that failure mode | 6 |
+| Badge `info` variant repointed to a new dedicated blue, not the teal accent | Brief explicitly wants status colors visually distinct from the brand accent | 6 |
+| Select's chevron switched from a hardcoded data-URI SVG to a `lucide-react` icon | The data-URI baked in a fixed stroke color with no light/dark pair; an icon component can use a token | 6 |
 
 ---
 
@@ -371,3 +411,30 @@ The nine DeadlineTracker flaws (F1–F9 in `ROLES_AND_RLS.md`): self-escalation 
 - `supabase/ca-firm/schema.sql` — the single source of truth for the database.
 - `AGENTS.md` — Next.js 16 warning: consult `node_modules/next/dist/docs/` before writing framework code.
 - `src/lib/task-options.ts` — the stage-machine map; **must be kept in sync with `handle_task_stage()`** if the trigger ever changes.
+- `src/app/globals.css` — the design-system source of truth (Ph6): every color token, light + dark, with contrast-ratio comments. Rebrand the teal accent by editing the 4 `--color-accent*` lines here (root + `.dark`).
+
+---
+
+## 10. Feature gap analysis — Indian CA day-to-day (2026-07-09 review)
+
+A product review from a practicing-Indian-CA perspective: the current build is a **solid generic work-tracker + curated client portal**, but the CA-specific layer — the part that actually reflects how a firm's week runs — is missing. Three tiers, roughly daily → weekly/monthly → moat:
+
+**Tier 1 — daily pain (sellability core):**
+
+- **Compliance applicability engine + calendar-driven statutory task generation.** Client profile must capture: constitution, GST registrations (plural GSTINs per PAN, per-state, regular/composition/QRMP), TAN, PF/ESI/PT, audit applicability. Statutory tasks generate **by calendar** (e.g. on the 1st, spawn GSTR-3B for all GST clients), **not** by completion-chaining. Flaw this fixes: current recurrence spawns the next cycle only on completion → a stalled month means the next statutory task never exists.
+- **Filing-status grid:** clients × periods × compliance type, red/amber/green (the partner's "18th evening" screen). Requires structured periods on tasks (`financial_year`/`period_type`/`period_key`), not free-text `period_label`.
+- **Client billing & receivables:** fee master per client per service, GST-compliant firm invoices (SAC 9982), receipts, outstanding ledger, TDS u/s 194J on fees, "fees pending — hold work" flag on clients.
+- **Credentials vault:** per-client encrypted store for GST/IT/TRACES/MCA/EPFO/ESIC/PT logins, permission-gated reveal, view-audit log.
+- **DSC register:** physical token custody (who holds which token), in/out movement, expiry alerts.
+- **Notice & assessment tracker:** IT (143(1), defective, scrutiny, 148) + GST (ASMT-10, DRC-01) with authority, section, response due date, hearings/adjournments — a long-running lifecycle distinct from routine tasks.
+- **Automated reminders, WhatsApp-first:** escalating T-7/T-3/T-1 client reminders, `waiting_client` nagging, bulk sends. WhatsApp Business API outranks email for Indian clients.
+
+**Tier 2 — weekly/monthly:**
+
+UDIN register; FY-wise document organization + permanent file; structured filing outcomes (ARN/ack no., filed date) on completed tasks; portal-facing per-item document checklists (surface existing template `checklist_items` as received/pending); client groups (one promoter, many entities); timesheets + attendance/leave (article assistants); challan register (TDS/advance tax/GST payments per client per period).
+
+**Tier 3 — moat (post-pilot):**
+
+GSP/ERI portal sync (auto filing status, GSTR-2B, 26AS/AIS); Tally import; engagement letters + NOC-from-previous-auditor tracking + audit working papers.
+
+The roadmap in §7 sequences Tier 1 across Phases 9–13 (schema in Ph9, build in Ph10, communication in Ph11, billing in Ph12, registers in Ph13); Tier 2 and Tier 3 are explicitly deferred until pilot feedback (end of §7) prioritizes them.
