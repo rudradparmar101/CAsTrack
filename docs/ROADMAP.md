@@ -43,7 +43,6 @@
 - [ ] Encode the locked decision: statutory tasks are CALENDAR-generated; completion-chaining remains ONLY for internal recurring tasks — guard the Ph4 spawn path to skip source='statutory'.
 - [ ] Fold everything into schema.sql too (stays the greenfield source of truth); the migration file is the delta for the live DB.
 - [ ] ⚠ HUMAN STOP: present migration SQL + rollback notes to Jay BEFORE applying to the live project. On approval: apply, verify, commit `feat(schema): CA compliance core — registrations, compliance_types, structured periods (migration 001)`.
-- [ ] ⚠ HUMAN (parallel, Jay, outside repo): start the Meta WhatsApp Business API application — weeks of lead time.
 
 ## Phase 10 — Compliance core build [ ]  (sub-commit per chunk)
 - [ ] (a) Registrations editor on client form/detail (JSON sub-form pattern like addresses; validate via ca-options.ts regexes).
@@ -82,7 +81,7 @@ Onboard one friendly firm (lined up during Ph9–10). Collect feedback. Feedback
 - [ ] Super-admin /admin surface (plans, firms, subscriptions; platform_admins-gated).
 
 ## Deferred (post-pilot, promote to phases on demand)
-Full notices module (Ph9 category tag is the stopgap) · client groups · timesheets/attendance · GSP/Tally sync · UDIN/challan registers.
+Full notices module (Ph9 category tag is the stopgap) · client groups · timesheets/attendance · GSP/Tally sync · UDIN/challan registers · WhatsApp Business API channel (Meta application + hook into the Ph11 channel-agnostic sender) — Jay's call: do last, if at all. Meta approval takes weeks — start the application that far ahead of wanting it live.
 
 ## Appendix — Feature-gap reference (why these phases exist)
 Tier 1 (sellability core): applicability engine + calendar-generated statutory tasks; filing-status grid; client billing/receivables; credentials vault; DSC register; notice tracker; WhatsApp-first automated reminders. Tier 2: UDIN register; FY-wise docs + permanent file; filing outcomes; portal document checklists; client groups; timesheets; challan register. Tier 3 (moat): GSP/ERI sync; Tally import; engagement letters/NOC/working papers. Core flaw fixed by Ph9–10: completion-chained recurrence means a stalled month never spawns the next statutory task.
