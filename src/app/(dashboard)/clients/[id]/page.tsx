@@ -12,7 +12,7 @@ const DOCUMENTS_BUCKET = 'client-documents';
 
 export default async function ClientDetailPage({ params }: ClientDetailPageProps) {
   const { id } = await params;
-  const { supabase, userId, profile } = await getAuthContext();
+  const { supabase, profile } = await getAuthContext();
   // No role redirect: employees reach this page if RLS lets them see the
   // client (clients.view or a task against it); otherwise the fetch below
   // returns nothing and we 404. client_users are diverted by the layout.
@@ -97,7 +97,6 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
       canManage={canManage}
       canUploadDocs={canUpload}
       canApproveDocs={canApprove}
-      currentUserId={userId}
     />
   );
 }

@@ -67,7 +67,7 @@ Two things have to hold: (a) no sibling-client data, (b) no firm-internal data.
 | `clients` | `id = get_user_client_id()` — exactly one row; a sibling client's `id` fails the predicate |
 | `client_addresses`, `client_authorized_persons` | `client_id = get_user_client_id()` |
 | `tasks` | `client_id = get_user_client_id() AND visible_to_client AND stage NOT IN ('created','archived')` |
-| `documents` | `client_id = get_user_client_id() AND visible_to_client AND (uploaded_by = auth.uid() OR approval_status = 'approved')` |
+| `documents` | `client_id = get_user_client_id() AND visible_to_client AND (uploaded_by = auth.uid() OR approval_status IN ('approved', 'rejected'))` |
 | `document_versions` | `can_access_document()` re-applies the parent document's client predicate |
 | `task_comments` | `visible_to_client AND client_can_access_task(task_id)` (which pins `client_id`) |
 | `notifications` | `user_id = auth.uid()` |

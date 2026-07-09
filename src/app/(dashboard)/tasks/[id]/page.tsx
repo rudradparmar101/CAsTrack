@@ -165,7 +165,6 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
             canUpload={canUpload === true}
             canApprove={canApprove === true}
             canAttach={canAttach}
-            currentUserId={userId}
           />
           <TaskComments
             taskId={typedTask.id}

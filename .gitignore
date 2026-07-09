@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# scripts/verify test run artifacts — fixture context, results, and Playwright
+# storageState files (live session cookies for test accounts) must never be
+# committed
+/scripts/verify/.data/

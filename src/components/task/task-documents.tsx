@@ -20,7 +20,6 @@ interface TaskDocumentsProps {
   canApprove: boolean;
   /** Attaching is an UPDATE on documents — partner or documents.approve. */
   canAttach: boolean;
-  currentUserId: string;
 }
 
 /**
@@ -36,7 +35,6 @@ export function TaskDocuments({
   canUpload,
   canApprove,
   canAttach,
-  currentUserId,
 }: TaskDocumentsProps) {
   const [showAttach, setShowAttach] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState('');
@@ -66,7 +64,6 @@ export function TaskDocuments({
         viewer="staff"
         canUpload={canUpload}
         canApprove={canApprove}
-        currentUserId={currentUserId}
         title="Task Documents"
       />
 

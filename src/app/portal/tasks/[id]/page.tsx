@@ -27,7 +27,7 @@ interface PortalTaskPageProps {
  *  - the task resolves only if it belongs to THIS client, is flagged
  *    visible_to_client, and is past 'created' / not archived
  *  - comments come back only if flagged visible_to_client
- *  - documents follow the own-upload-or-approved portal rule
+ *  - documents follow the own-upload-or-decided (approved/rejected) portal rule
  *  - staff author/uploader names resolve to null (profiles RLS) and render
  *    as "Your CA firm"
  */
@@ -138,7 +138,6 @@ export default async function PortalTaskPage({ params }: PortalTaskPageProps) {
           viewer="client"
           canUpload
           canApprove={false}
-          currentUserId={userId}
         />
 
         <TaskComments

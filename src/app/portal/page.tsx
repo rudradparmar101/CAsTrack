@@ -20,11 +20,11 @@ const DOCUMENTS_BUCKET = 'client-documents';
  * query returns only THIS client's tasks that staff flagged visible_to_client
  * (and that are past 'created' / not archived); the documents query returns
  * only rows where visible_to_client is true and the doc is either their own
- * upload or approved. Uploader names of staff resolve to null (profiles RLS)
- * and render as "Your CA firm".
+ * upload or has a decided outcome (approved/rejected). Uploader names of
+ * staff resolve to null (profiles RLS) and render as "Your CA firm".
  */
 export default async function PortalPage() {
-  const { supabase, userId, profile, firm, clientId } = await getAuthContext();
+  const { supabase, profile, firm, clientId } = await getAuthContext();
 
   // Defense-in-depth mirror of the dashboard layout guard.
   if (profile.role !== 'client_user' || !clientId) {
@@ -156,7 +156,6 @@ export default async function PortalPage() {
           viewer="client"
           canUpload
           canApprove={false}
-          currentUserId={userId}
         />
       </main>
     </div>

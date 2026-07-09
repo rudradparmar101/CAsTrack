@@ -586,10 +586,12 @@ RETURNS BOOLEAN AS $$
                                       OR public.employee_has_task_for_client(d.client_id)))
          ))
         OR
-        -- client path (curated): own client + client-visible + (own upload OR approved)
+        -- client path (curated): own client + client-visible + (own upload OR
+        -- a decided outcome — approved so they can see the file, rejected so
+        -- they can see the reason and correct it; pending staff drafts stay hidden)
         (d.client_id = public.get_user_client_id()
          AND d.visible_to_client
-         AND (d.uploaded_by = auth.uid() OR d.approval_status = 'approved'))
+         AND (d.uploaded_by = auth.uid() OR d.approval_status IN ('approved', 'rejected')))
       )
   );
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
@@ -1441,7 +1443,9 @@ CREATE POLICY "Authors can delete their own comments"
 -- ---------------------------------------------------------------------------
 -- 11.16 documents
 -- Client_user read rule (curated): own client + client-visible + (they
--- uploaded it OR it is approved). Rejected/pending staff drafts stay hidden.
+-- uploaded it OR it has a decided outcome — approved OR rejected, so a
+-- rejection reason is always visible to the client who needs to act on it).
+-- Pending staff drafts stay hidden until a decision is made.
 -- ---------------------------------------------------------------------------
 CREATE POLICY "Partners can view all firm documents"
   ON public.documents FOR SELECT TO authenticated
@@ -1459,12 +1463,12 @@ CREATE POLICY "Employees can view documents on accessible work"
     )
   );
 
-CREATE POLICY "Client users can view their own or approved client documents"
+CREATE POLICY "Client users can view their own, approved, or rejected client documents"
   ON public.documents FOR SELECT TO authenticated
   USING (
     client_id = public.get_user_client_id()
     AND visible_to_client
-    AND (uploaded_by = auth.uid() OR approval_status = 'approved')
+    AND (uploaded_by = auth.uid() OR approval_status IN ('approved', 'rejected'))
   );
 
 CREATE POLICY "Super admins can view all documents"

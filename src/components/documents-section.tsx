@@ -38,7 +38,6 @@ interface DocumentsSectionProps {
   viewer: 'staff' | 'client';
   canUpload: boolean;
   canApprove: boolean;
-  currentUserId: string;
   /** Section heading — defaults to "Documents". */
   title?: string;
 }
@@ -56,7 +55,6 @@ export function DocumentsSection({
   viewer,
   canUpload,
   canApprove,
-  currentUserId,
   title = 'Documents',
 }: DocumentsSectionProps) {
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -118,8 +116,12 @@ export function DocumentsSection({
               (v) => v.version_number === doc.current_version
             );
             const expanded = expandedId === doc.id;
-            const isOwnRejected =
-              doc.approval_status === 'rejected' && doc.uploaded_by === currentUserId;
+            // Correction is gated on visibility (any rejected doc the client
+            // can see, not just ones they personally uploaded) — matches the
+            // document_versions INSERT policy, which only requires
+            // can_access_document(), not original-uploader match.
+            const isRejectedForClient =
+              viewer === 'client' && canUpload && doc.approval_status === 'rejected';
 
             return (
               <div key={doc.id} className="py-4 first:pt-0 last:pb-0">
@@ -267,10 +269,10 @@ export function DocumentsSection({
                 {/* New version / corrected file. A client_user has no UPDATE
                     policy on documents — a correction IS a new version at the
                     DB layer, so that's exactly what the button says. */}
-                {(viewer === 'staff' && canUpload) || isOwnRejected ? (
+                {(viewer === 'staff' && canUpload) || isRejectedForClient ? (
                   <div className="mt-2 pl-7">
                     <Button
-                      variant={isOwnRejected ? 'primary' : 'ghost'}
+                      variant={isRejectedForClient ? 'primary' : 'ghost'}
                       size="sm"
                       onClick={() => setVersionTarget(doc)}
                     >

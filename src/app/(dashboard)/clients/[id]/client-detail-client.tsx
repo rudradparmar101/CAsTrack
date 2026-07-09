@@ -45,7 +45,6 @@ interface ClientDetailClientProps {
   canManage: boolean;
   canUploadDocs: boolean;
   canApproveDocs: boolean;
-  currentUserId: string;
 }
 
 export function ClientDetailClient({
@@ -57,7 +56,6 @@ export function ClientDetailClient({
   canManage,
   canUploadDocs,
   canApproveDocs,
-  currentUserId,
 }: ClientDetailClientProps) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -295,7 +293,6 @@ export function ClientDetailClient({
         viewer="staff"
         canUpload={canUploadDocs}
         canApprove={canApproveDocs}
-        currentUserId={currentUserId}
       />
 
       {/* Tasks placeholder — module comes in a later phase */}
