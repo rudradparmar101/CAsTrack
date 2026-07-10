@@ -32,6 +32,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
   const [
     { data: addresses },
     { data: persons },
+    { data: registrations },
     { data: documents },
     canManage,
     canUpload,
@@ -47,6 +48,11 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
       .select('*')
       .eq('client_id', id)
       .order('is_primary', { ascending: false }),
+    supabase
+      .from('client_registrations')
+      .select('*')
+      .eq('client_id', id)
+      .order('created_at', { ascending: true }),
     supabase
       .from('documents')
       .select(
@@ -93,6 +99,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
       creator={(client.creator as Pick<Profile, 'id' | 'name'>) || null}
       addresses={addresses || []}
       authorizedPersons={persons || []}
+      registrations={registrations || []}
       documents={docsWithUrls}
       canManage={canManage}
       canUploadDocs={canUpload}

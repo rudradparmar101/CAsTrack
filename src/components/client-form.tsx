@@ -6,12 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { BUSINESS_TYPE_OPTIONS, ADDRESS_TYPE_OPTIONS } from '@/lib/ca-options';
+import {
+  BUSINESS_TYPE_OPTIONS,
+  ADDRESS_TYPE_OPTIONS,
+  REGISTRATION_TYPE_OPTIONS,
+  GST_SCHEME_OPTIONS,
+  AUDIT_TYPE_OPTIONS,
+} from '@/lib/ca-options';
 import type {
   ActionResult,
   Client,
   ClientAddress,
   ClientAuthorizedPerson,
+  ClientRegistration,
 } from '@/lib/types';
 
 interface AddressRow {
@@ -36,12 +43,23 @@ interface PersonRow {
   is_primary: boolean;
 }
 
+interface RegistrationRow {
+  key: string;
+  type: string;
+  registration_number: string;
+  state: string;
+  state_code: string;
+  gst_scheme: string;
+  is_active: boolean;
+}
+
 interface ClientFormProps {
   client?: Client;
   /** Existing rows — pass from the detail page when editing. The update action
    *  uses replace-all semantics, so edit MUST supply the full current set. */
   addresses?: ClientAddress[];
   authorizedPersons?: ClientAuthorizedPerson[];
+  registrations?: ClientRegistration[];
   action: (formData: FormData) => Promise<ActionResult>;
   onSuccess: () => void;
   onCancel: () => void;
@@ -73,16 +91,31 @@ function newPersonRow(): PersonRow {
   };
 }
 
+function newRegistrationRow(): RegistrationRow {
+  return {
+    key: crypto.randomUUID(),
+    type: 'gstin',
+    registration_number: '',
+    state: '',
+    state_code: '',
+    gst_scheme: 'regular',
+    is_active: true,
+  };
+}
+
 export function ClientForm({
   client,
   addresses: initialAddresses,
   authorizedPersons: initialPersons,
+  registrations: initialRegistrations,
   action,
   onSuccess,
   onCancel,
 }: ClientFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [auditApplicable, setAuditApplicable] = useState(client?.is_audit_applicable ?? false);
+  const [auditType, setAuditType] = useState<string>(client?.audit_type || 'tax_audit');
 
   const [addresses, setAddresses] = useState<AddressRow[]>(() =>
     (initialAddresses || []).map((a) => ({
@@ -110,12 +143,28 @@ export function ClientForm({
     }))
   );
 
+  const [registrations, setRegistrations] = useState<RegistrationRow[]>(() =>
+    (initialRegistrations || []).map((r) => ({
+      key: r.id,
+      type: r.type,
+      registration_number: r.registration_number,
+      state: r.state || '',
+      state_code: r.state_code || '',
+      gst_scheme: r.gst_scheme || 'regular',
+      is_active: r.is_active,
+    }))
+  );
+
   const updateAddress = (key: string, patch: Partial<AddressRow>) => {
     setAddresses((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   };
 
   const updatePerson = (key: string, patch: Partial<PersonRow>) => {
     setPersons((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  };
+
+  const updateRegistration = (key: string, patch: Partial<RegistrationRow>) => {
+    setRegistrations((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -142,6 +191,16 @@ export function ClientForm({
       'authorized_persons',
       JSON.stringify(
         persons.map((row) => {
+          const { key, ...rest } = row;
+          void key;
+          return rest;
+        })
+      )
+    );
+    formData.set(
+      'registrations',
+      JSON.stringify(
+        registrations.map((row) => {
           const { key, ...rest } = row;
           void key;
           return rest;
@@ -254,6 +313,121 @@ export function ClientForm({
               defaultValue={client?.gst_registration_date || ''}
             />
           </div>
+
+          {/* Hidden mirror: unchecked checkboxes never submit. */}
+          <input type="hidden" name="is_audit_applicable" value={auditApplicable ? 'true' : 'false'} />
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+              <input
+                type="checkbox"
+                checked={auditApplicable}
+                onChange={(e) => setAuditApplicable(e.target.checked)}
+                className="h-4 w-4 rounded border-[var(--color-border)]"
+              />
+              Audit applicable
+            </label>
+            {auditApplicable && (
+              <Select
+                name="audit_type"
+                options={AUDIT_TYPE_OPTIONS}
+                value={auditType}
+                onChange={(e) => setAuditType(e.target.value)}
+                className="max-w-xs"
+              />
+            )}
+          </div>
+        </div>
+
+        {/* ── Statutory registrations (repeatable) ── */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2">
+            <h3 className="text-sm font-semibold text-[var(--color-text)]">
+              Statutory Registrations
+            </h3>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setRegistrations((rows) => [...rows, newRegistrationRow()])}
+            >
+              <Plus className="h-4 w-4" />
+              Add registration
+            </Button>
+          </div>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Multiple GSTINs (per state), TAN, PF/ESI/PT codes — drives which statutory
+            filings get generated for this client.
+          </p>
+          {registrations.length === 0 && (
+            <p className="text-sm text-[var(--color-text-muted)]">No registrations added.</p>
+          )}
+          {registrations.map((row, i) => (
+            <div
+              key={row.key}
+              className="rounded-lg border border-[var(--color-border)] p-4 space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">
+                  Registration {i + 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setRegistrations((rows) => rows.filter((r) => r.key !== row.key))}
+                  className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] transition-colors"
+                  title="Remove registration"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Select
+                  label="Type"
+                  options={REGISTRATION_TYPE_OPTIONS}
+                  value={row.type}
+                  onChange={(e) => updateRegistration(row.key, { type: e.target.value })}
+                />
+                <Input
+                  label="Registration Number"
+                  className="uppercase"
+                  value={row.registration_number}
+                  onChange={(e) => updateRegistration(row.key, { registration_number: e.target.value })}
+                  required
+                />
+                {row.type === 'gstin' && (
+                  <>
+                    <Select
+                      label="GST Scheme"
+                      options={GST_SCHEME_OPTIONS}
+                      value={row.gst_scheme}
+                      onChange={(e) => updateRegistration(row.key, { gst_scheme: e.target.value })}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <Input
+                        label="State"
+                        value={row.state}
+                        onChange={(e) => updateRegistration(row.key, { state: e.target.value })}
+                      />
+                      <Input
+                        label="State Code"
+                        placeholder="27"
+                        value={row.state_code}
+                        onChange={(e) => updateRegistration(row.key, { state_code: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+              <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+                <input
+                  type="checkbox"
+                  checked={row.is_active}
+                  onChange={(e) => updateRegistration(row.key, { is_active: e.target.checked })}
+                  className="h-4 w-4 rounded border-[var(--color-border)]"
+                />
+                Active
+              </label>
+            </div>
+          ))}
         </div>
 
         {/* ── Addresses (repeatable) ── */}

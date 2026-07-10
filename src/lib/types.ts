@@ -86,6 +86,8 @@ export type AddressType = 'registered' | 'business' | 'branch' | 'warehouse' | '
 
 export type DocApprovalStatus = 'pending' | 'approved' | 'rejected';
 
+export type AuditType = 'tax_audit' | 'statutory_audit' | 'gst_audit' | 'other';
+
 export interface Client {
   id: string;
   firm_id: string;
@@ -98,12 +100,63 @@ export interface Client {
   cin: string | null;
   incorporation_date: string | null;
   gst_registration_date: string | null;
+  /** Phase 9: drives whether audit-gated compliance_types generate for this client. */
+  is_audit_applicable: boolean;
+  audit_type: AuditType | null;
   email: string | null;
   phone: string | null;
   /** Internal notes — never exposed to client_user UI. */
   notes: string | null;
   is_active: boolean;
   created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================
+// CA compliance core (Phase 9 schema, Phase 10 build)
+// ============================================
+
+export type RegistrationType = 'gstin' | 'tan' | 'pf' | 'esi' | 'pt' | 'other';
+export type GstScheme = 'regular' | 'composition' | 'qrmp';
+export type CompliancePeriodicity = 'monthly' | 'quarterly' | 'annual' | 'event';
+export type TaskSource = 'manual' | 'recurring' | 'statutory';
+export type TaskCategory = 'routine' | 'notice';
+export type TaskPeriodType = 'monthly' | 'quarterly' | 'annual' | 'event';
+
+/** A client's statutory registration — a client can hold several (multi-state
+ *  GSTINs, one TAN, PF/ESI/PT codes). The applicability source for
+ *  compliance_types generation; `clients.gstin/tan/pan` remain the single
+ *  PRIMARY identifiers for search/display. */
+export interface ClientRegistration {
+  id: string;
+  firm_id: string;
+  client_id: string;
+  type: RegistrationType;
+  registration_number: string;
+  state: string | null;
+  state_code: string | null;
+  gst_scheme: GstScheme | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Platform-wide compliance-type catalog (like `permissions` — no firm_id).
+ *  due_day_rule convention: {due_day, months_after_period_end} for monthly/
+ *  quarterly types, {due_day, due_month} for a fixed annual date. */
+export interface ComplianceType {
+  id: string;
+  code: string;
+  name: string;
+  department_code: string;
+  periodicity: CompliancePeriodicity;
+  due_day_rule: { due_day?: number; months_after_period_end?: number; due_month?: number; note?: string };
+  requires_registration_type: RegistrationType | null;
+  requires_gst_scheme: GstScheme | null;
+  requires_flag: string | null;
+  applicable_business_types: BusinessType[] | null;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -218,7 +271,8 @@ export type TaskActivityAction =
   | 'document_attached'
   | 'document_approved'
   | 'document_rejected'
-  | 'recurring_generated';
+  | 'recurring_generated'
+  | 'filing_outcome_recorded';
 
 export interface Department {
   id: string;
@@ -246,6 +300,14 @@ export interface FirmTask {
   due_date: string;
   statutory_due_date: string | null;
   period_label: string | null;
+  /** Phase 9 structured period fields — statutory tasks use these; manual/
+   *  recurring internal tasks may leave them null and keep period_label. */
+  financial_year: string | null;
+  period_type: TaskPeriodType | null;
+  period_key: string | null;
+  source: TaskSource;
+  category: TaskCategory;
+  compliance_type_id: string | null;
   assigned_to: string | null;
   reviewer_id: string | null;
   visible_to_client: boolean;

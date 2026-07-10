@@ -1,4 +1,4 @@
-import type { AddressType, BusinessType } from '@/lib/types';
+import type { AddressType, AuditType, BusinessType, GstScheme, RegistrationType } from '@/lib/types';
 
 /**
  * Shared option lists + format validators for Indian statutory identifiers.
@@ -39,6 +39,42 @@ export function businessTypeLabel(value: string): string {
 
 export function addressTypeLabel(value: string): string {
   return ADDRESS_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value;
+}
+
+// ---- Phase 9/10: registrations + audit applicability ----
+
+export const REGISTRATION_TYPE_OPTIONS: { value: RegistrationType; label: string }[] = [
+  { value: 'gstin', label: 'GSTIN' },
+  { value: 'tan', label: 'TAN' },
+  { value: 'pf', label: 'PF (EPFO)' },
+  { value: 'esi', label: 'ESI (ESIC)' },
+  { value: 'pt', label: 'Professional Tax' },
+  { value: 'other', label: 'Other' },
+];
+
+export const GST_SCHEME_OPTIONS: { value: GstScheme; label: string }[] = [
+  { value: 'regular', label: 'Regular' },
+  { value: 'composition', label: 'Composition' },
+  { value: 'qrmp', label: 'QRMP' },
+];
+
+export const AUDIT_TYPE_OPTIONS: { value: AuditType; label: string }[] = [
+  { value: 'tax_audit', label: 'Tax Audit (44AB)' },
+  { value: 'statutory_audit', label: 'Statutory Audit' },
+  { value: 'gst_audit', label: 'GST Audit' },
+  { value: 'other', label: 'Other' },
+];
+
+export function registrationTypeLabel(value: string): string {
+  return REGISTRATION_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value.toUpperCase();
+}
+
+export function gstSchemeLabel(value: string): string {
+  return GST_SCHEME_OPTIONS.find((o) => o.value === value)?.label ?? value;
+}
+
+export function auditTypeLabel(value: string): string {
+  return AUDIT_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value;
 }
 
 // ---- Statutory identifier formats (mirror schema.sql CHECK constraints) ----

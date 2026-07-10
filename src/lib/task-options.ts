@@ -121,4 +121,5 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   document_approved: 'approved a document',
   document_rejected: 'rejected a document',
   recurring_generated: 'generated this task from a recurrence',
+  filing_outcome_recorded: 'recorded the filing outcome',
 };

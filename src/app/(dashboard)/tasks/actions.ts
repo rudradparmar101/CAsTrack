@@ -292,13 +292,19 @@ export async function updateTaskAction(formData: FormData): Promise<ActionResult
 /** Core transition, used by changeTaskStageAction. The DB trigger is the
  *  authority; the app-layer check only produces friendly errors for
  *  employees. */
+interface FilingOutcome {
+  arn?: string;
+  filedDate?: string;
+}
+
 async function changeStageCore(
   supabase: Supabase,
   userId: string,
   profile: Profile,
   taskId: string,
   toStage: TaskStage,
-  note?: string
+  note?: string,
+  filingOutcome?: FilingOutcome
 ): Promise<ActionResult> {
   if (!TASK_STAGES.includes(toStage)) {
     return { success: false, error: 'Invalid stage.' };
@@ -359,6 +365,29 @@ async function changeStageCore(
     oldValue: { stage: stageLabel(current) },
     newValue: { stage: stageLabel(toStage), ...(note ? { note } : {}) },
   });
+
+  // Filing outcome (Phase 10d): captured at completion for statutory tasks
+  // only, stored as its own immutable activity entry rather than a new
+  // tasks column (no schema change needed this phase). "Shown on task" =
+  // the activity feed; "shown on grid" = the grid links to the task itself.
+  if (
+    toStage === 'completed' &&
+    task.source === 'statutory' &&
+    filingOutcome &&
+    (filingOutcome.arn || filingOutcome.filedDate)
+  ) {
+    await logTaskActivity({
+      supabase,
+      firmId: profile.firm_id,
+      taskId,
+      actorId: userId,
+      action: 'filing_outcome_recorded',
+      newValue: {
+        ...(filingOutcome.arn ? { arn: filingOutcome.arn } : {}),
+        ...(filingOutcome.filedDate ? { filed_date: filingOutcome.filedDate } : {}),
+      },
+    });
+  }
 
   // Stage-specific notifications.
   if (toStage === 'under_review' && task.reviewer_id) {
@@ -476,7 +505,8 @@ async function changeStageCore(
 export async function changeTaskStageAction(
   taskId: string,
   toStage: TaskStage,
-  note?: string
+  note?: string,
+  filingOutcome?: { arn?: string; filedDate?: string }
 ): Promise<ActionResult> {
   const guard = await requireStaff();
   if (!guard.ok) return { success: false, error: guard.error };
@@ -486,7 +516,8 @@ export async function changeTaskStageAction(
     guard.profile,
     taskId,
     toStage,
-    note?.trim() || undefined
+    note?.trim() || undefined,
+    filingOutcome
   );
 }
 

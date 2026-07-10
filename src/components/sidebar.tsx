@@ -15,6 +15,7 @@ import {
   Clock,
   X,
   LayoutTemplate,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -28,6 +29,7 @@ const adminNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/clients', label: 'Clients', icon: Users },
   { href: '/tasks', label: 'Tasks', icon: CheckSquare },
+  { href: '/compliance', label: 'Filing Status', icon: ShieldCheck },
   { href: '/templates', label: 'Templates', icon: LayoutTemplate },
   { href: '/team', label: 'Team', icon: UsersRound },
   { href: '/settings', label: 'Settings', icon: Settings },

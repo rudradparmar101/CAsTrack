@@ -27,12 +27,13 @@ import { ClientForm } from '@/components/client-form';
 import { DocumentsSection } from '@/components/documents-section';
 import { updateClientAction, setClientActiveAction } from '../actions';
 import { inviteClientUserAction } from '../portal-actions';
-import { addressTypeLabel, businessTypeLabel } from '@/lib/ca-options';
+import { addressTypeLabel, auditTypeLabel, businessTypeLabel, gstSchemeLabel, registrationTypeLabel } from '@/lib/ca-options';
 import type {
   Client,
   ClientAddress,
   ClientAuthorizedPerson,
   ClientDocumentWithDetails,
+  ClientRegistration,
   Profile,
 } from '@/lib/types';
 
@@ -41,6 +42,7 @@ interface ClientDetailClientProps {
   creator: Pick<Profile, 'id' | 'name'> | null;
   addresses: ClientAddress[];
   authorizedPersons: ClientAuthorizedPerson[];
+  registrations: ClientRegistration[];
   documents: ClientDocumentWithDetails[];
   canManage: boolean;
   canUploadDocs: boolean;
@@ -52,6 +54,7 @@ export function ClientDetailClient({
   creator,
   addresses,
   authorizedPersons,
+  registrations,
   documents,
   canManage,
   canUploadDocs,
@@ -91,6 +94,14 @@ export function ClientDetailClient({
       value: client.gst_registration_date
         ? format(new Date(client.gst_registration_date), 'MMM d, yyyy')
         : null,
+    },
+    {
+      label: 'Audit Applicable',
+      value: client.is_audit_applicable
+        ? client.audit_type
+          ? auditTypeLabel(client.audit_type)
+          : 'Yes'
+        : 'No',
     },
   ];
 
@@ -239,6 +250,48 @@ export function ClientDetailClient({
         )}
       </Card>
 
+      {/* Statutory registrations */}
+      <Card>
+        <h2 className="text-lg font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
+          <BadgeCheck className="h-5 w-5 text-[var(--color-accent)]" />
+          Statutory Registrations
+          <span className="text-sm font-normal text-[var(--color-text-muted)]">
+            ({registrations.length})
+          </span>
+        </h2>
+        {registrations.length === 0 ? (
+          <p className="text-sm text-[var(--color-text-muted)]">No registrations on file.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {registrations.map((reg) => (
+              <div
+                key={reg.id}
+                className="rounded-lg border border-[var(--color-border)] p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--color-accent-muted)] text-[var(--color-accent)]">
+                    {registrationTypeLabel(reg.type)}
+                  </span>
+                  {!reg.is_active && <Badge variant="default">Inactive</Badge>}
+                </div>
+                <p className="text-sm font-mono text-[var(--color-text)] mt-2">
+                  {reg.registration_number}
+                </p>
+                <p className="text-sm text-[var(--color-text-secondary)]">
+                  {[
+                    reg.gst_scheme ? gstSchemeLabel(reg.gst_scheme) : null,
+                    reg.state,
+                    reg.state_code ? `(${reg.state_code})` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || '—'}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       {/* Authorized persons */}
       <Card>
         <h2 className="text-lg font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
@@ -319,6 +372,7 @@ export function ClientDetailClient({
             client={client}
             addresses={addresses}
             authorizedPersons={authorizedPersons}
+            registrations={registrations}
             action={updateClientAction}
             onSuccess={() => setShowEditModal(false)}
             onCancel={() => setShowEditModal(false)}

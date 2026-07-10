@@ -184,6 +184,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
             isPartner={isPartner}
             canUpdate={canUpdate}
             history={(stageHistory as TaskStageHistoryWithActor[]) || []}
+            source={typedTask.source}
           />
           <TaskAssignment
             taskId={typedTask.id}

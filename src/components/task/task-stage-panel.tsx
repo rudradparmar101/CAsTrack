@@ -14,7 +14,7 @@ import {
   transitionLabel,
   stageLabel,
 } from '@/lib/task-options';
-import type { TaskStage, TaskStageHistoryWithActor } from '@/lib/types';
+import type { TaskSource, TaskStage, TaskStageHistoryWithActor } from '@/lib/types';
 
 interface TaskStagePanelProps {
   taskId: string;
@@ -26,6 +26,8 @@ interface TaskStagePanelProps {
    *  only — RLS and the DB trigger remain the enforcement. */
   canUpdate: boolean;
   history: TaskStageHistoryWithActor[];
+  /** Statutory tasks (Phase 9/10) get an ARN/filed-date prompt on completion. */
+  source: TaskSource;
 }
 
 /**
@@ -40,23 +42,36 @@ export function TaskStagePanel({
   isPartner,
   canUpdate,
   history,
+  source,
 }: TaskStagePanelProps) {
   const [note, setNote] = useState('');
+  const [arn, setArn] = useState('');
+  const [filedDate, setFiledDate] = useState('');
   const [pendingStage, setPendingStage] = useState<TaskStage | null>(null);
   const [error, setError] = useState('');
   const [showForce, setShowForce] = useState(false);
   const [forceStage, setForceStage] = useState<TaskStage | ''>('');
 
   const transitions = allowedTransitions(stage, hasReviewer);
+  const isStatutory = source === 'statutory';
 
   const handleTransition = async (toStage: TaskStage) => {
     setError('');
     setPendingStage(toStage);
-    const result = await changeTaskStageAction(taskId, toStage, note.trim() || undefined);
+    const result = await changeTaskStageAction(
+      taskId,
+      toStage,
+      note.trim() || undefined,
+      isStatutory && toStage === 'completed'
+        ? { arn: arn.trim() || undefined, filedDate: filedDate || undefined }
+        : undefined
+    );
     if (!result.success) {
       setError(result.error || 'Failed to change the stage.');
     } else {
       setNote('');
+      setArn('');
+      setFiledDate('');
       setForceStage('');
     }
     setPendingStage(null);
@@ -81,6 +96,23 @@ export function TaskStagePanel({
             rows={2}
             className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm bg-[var(--color-input-bg)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent resize-y"
           />
+          {isStatutory && transitions.includes('completed') && (
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={arn}
+                onChange={(e) => setArn(e.target.value)}
+                placeholder="ARN / Ack. No. (optional)"
+                className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm bg-[var(--color-input-bg)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent"
+              />
+              <input
+                type="date"
+                value={filedDate}
+                onChange={(e) => setFiledDate(e.target.value)}
+                aria-label="Filed date"
+                className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm bg-[var(--color-input-bg)] text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent"
+              />
+            </div>
+          )}
           <div className="flex flex-col gap-2">
             {transitions.map((toStage) => (
               <Button

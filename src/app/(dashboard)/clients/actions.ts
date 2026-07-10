@@ -6,6 +6,9 @@ import { CLIENTS_PAGE_SIZE } from '@/lib/pagination';
 import {
   BUSINESS_TYPE_OPTIONS,
   ADDRESS_TYPE_OPTIONS,
+  REGISTRATION_TYPE_OPTIONS,
+  GST_SCHEME_OPTIONS,
+  AUDIT_TYPE_OPTIONS,
   GSTIN_RE,
   PAN_RE,
   TAN_RE,
@@ -74,6 +77,15 @@ interface ParsedPerson {
   is_primary: boolean;
 }
 
+interface ParsedRegistration {
+  type: string;
+  registration_number: string;
+  state: string | null;
+  state_code: string | null;
+  gst_scheme: string | null;
+  is_active: boolean;
+}
+
 function opt(value: FormDataEntryValue | null): string | null {
   const s = typeof value === 'string' ? value.trim() : '';
   return s === '' ? null : s;
@@ -114,6 +126,11 @@ function parseClientFields(formData: FormData):
     return { ok: false, error: 'CIN format looks invalid (21 characters, starts with L or U).' };
   }
 
+  const auditType = opt(formData.get('audit_type'));
+  if (auditType && !AUDIT_TYPE_OPTIONS.some((o) => o.value === auditType)) {
+    return { ok: false, error: 'Please choose a valid audit type.' };
+  }
+
   return {
     ok: true,
     values: {
@@ -126,6 +143,8 @@ function parseClientFields(formData: FormData):
       cin,
       incorporation_date: opt(formData.get('incorporation_date')),
       gst_registration_date: opt(formData.get('gst_registration_date')),
+      is_audit_applicable: formData.get('is_audit_applicable') === 'true',
+      audit_type: formData.get('is_audit_applicable') === 'true' ? auditType : null,
       email: opt(formData.get('email')),
       phone: opt(formData.get('phone')),
       notes: opt(formData.get('notes')),
@@ -223,6 +242,62 @@ function parsePersons(formData: FormData):
   return { ok: true, persons };
 }
 
+function parseRegistrations(formData: FormData):
+  | { ok: true; registrations: ParsedRegistration[] }
+  | { ok: false; error: string } {
+  const raw = formData.get('registrations');
+  if (!raw || typeof raw !== 'string') return { ok: true, registrations: [] };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, error: 'Registrations payload was malformed.' };
+  }
+  if (!Array.isArray(parsed)) return { ok: false, error: 'Registrations payload was malformed.' };
+
+  const registrations: ParsedRegistration[] = [];
+  const seen = new Set<string>();
+  for (const [i, entry] of parsed.entries()) {
+    const r = entry as Record<string, unknown>;
+    const type = typeof r.type === 'string' ? r.type.trim() : '';
+    const registrationNumber =
+      typeof r.registration_number === 'string' ? r.registration_number.trim().toUpperCase() : '';
+
+    if (!type || !REGISTRATION_TYPE_OPTIONS.some((o) => o.value === type)) {
+      return { ok: false, error: `Registration ${i + 1}: please choose a valid type.` };
+    }
+    if (!registrationNumber) {
+      return { ok: false, error: `Registration ${i + 1}: registration number is required.` };
+    }
+    if (type === 'gstin' && !GSTIN_RE.test(registrationNumber)) {
+      return { ok: false, error: `Registration ${i + 1}: GSTIN format looks invalid (e.g., 27ABCDE1234F1Z5).` };
+    }
+    if (type === 'tan' && !TAN_RE.test(registrationNumber)) {
+      return { ok: false, error: `Registration ${i + 1}: TAN format looks invalid (e.g., MUMA12345B).` };
+    }
+    if (seen.has(registrationNumber)) {
+      return { ok: false, error: `Registration ${i + 1}: duplicate registration number "${registrationNumber}".` };
+    }
+    seen.add(registrationNumber);
+
+    const gstScheme = typeof r.gst_scheme === 'string' && r.gst_scheme ? r.gst_scheme : null;
+    if (type === 'gstin' && gstScheme && !GST_SCHEME_OPTIONS.some((o) => o.value === gstScheme)) {
+      return { ok: false, error: `Registration ${i + 1}: please choose a valid GST scheme.` };
+    }
+
+    registrations.push({
+      type,
+      registration_number: registrationNumber,
+      state: typeof r.state === 'string' ? r.state.trim() || null : null,
+      state_code: typeof r.state_code === 'string' ? r.state_code.trim() || null : null,
+      gst_scheme: type === 'gstin' ? gstScheme : null,
+      is_active: r.is_active !== false,
+    });
+  }
+  return { ok: true, registrations };
+}
+
 // ---- actions ------------------------------------------------------------------
 
 export async function fetchMoreClientsAction(
@@ -256,6 +331,8 @@ export async function createClientAction(formData: FormData): Promise<ActionResu
   if (!addressesResult.ok) return { success: false, error: addressesResult.error };
   const personsResult = parsePersons(formData);
   if (!personsResult.ok) return { success: false, error: personsResult.error };
+  const registrationsResult = parseRegistrations(formData);
+  if (!registrationsResult.ok) return { success: false, error: registrationsResult.error };
 
   const { data: client, error } = await supabase
     .from('clients')
@@ -296,6 +373,19 @@ export async function createClientAction(formData: FormData): Promise<ActionResu
     }
   }
 
+  if (registrationsResult.registrations.length > 0) {
+    const { error: regError } = await supabase.from('client_registrations').insert(
+      registrationsResult.registrations.map((r) => ({ ...r, firm_id: firmId, client_id: client.id }))
+    );
+    if (regError) {
+      revalidatePath('/clients');
+      return {
+        success: false,
+        error: `Client was created, but saving registrations failed (${regError.message}). Open the client and edit to retry.`,
+      };
+    }
+  }
+
   revalidatePath('/clients');
   return { success: true };
 }
@@ -314,6 +404,8 @@ export async function updateClientAction(formData: FormData): Promise<ActionResu
   if (!addressesResult.ok) return { success: false, error: addressesResult.error };
   const personsResult = parsePersons(formData);
   if (!personsResult.ok) return { success: false, error: personsResult.error };
+  const registrationsResult = parseRegistrations(formData);
+  if (!registrationsResult.ok) return { success: false, error: registrationsResult.error };
 
   // Explicitly firm-scoped (defense-in-depth) in addition to RLS.
   const { error } = await supabase
@@ -360,6 +452,23 @@ export async function updateClientAction(formData: FormData): Promise<ActionResu
     );
     if (personError) {
       return { success: false, error: `Failed to save authorized persons: ${personError.message}` };
+    }
+  }
+
+  const { error: regDeleteError } = await supabase
+    .from('client_registrations')
+    .delete()
+    .eq('client_id', id)
+    .eq('firm_id', firmId);
+  if (regDeleteError) {
+    return { success: false, error: `Failed to update registrations: ${regDeleteError.message}` };
+  }
+  if (registrationsResult.registrations.length > 0) {
+    const { error: regError } = await supabase.from('client_registrations').insert(
+      registrationsResult.registrations.map((r) => ({ ...r, firm_id: firmId, client_id: id }))
+    );
+    if (regError) {
+      return { success: false, error: `Failed to save registrations: ${regError.message}` };
     }
   }
 
