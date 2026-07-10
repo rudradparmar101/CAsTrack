@@ -40,6 +40,11 @@ CREATE TYPE public.task_recurrence AS ENUM (
 
 CREATE TYPE public.doc_approval_status AS ENUM ('pending', 'approved', 'rejected');
 
+-- Phase 9 — CA compliance core.
+CREATE TYPE public.registration_type AS ENUM ('gstin', 'tan', 'pf', 'esi', 'pt', 'other');
+CREATE TYPE public.gst_scheme AS ENUM ('regular', 'composition', 'qrmp');
+CREATE TYPE public.compliance_periodicity AS ENUM ('monthly', 'quarterly', 'annual', 'event');
+
 CREATE TYPE public.billing_cycle AS ENUM ('monthly', 'yearly');
 
 CREATE TYPE public.subscription_status AS ENUM (
@@ -89,6 +94,37 @@ CREATE TABLE public.role_permissions (
   permission_key TEXT NOT NULL REFERENCES public.permissions(key) ON DELETE CASCADE,
   allowed        BOOLEAN NOT NULL DEFAULT false,
   PRIMARY KEY (role, permission_key)
+);
+
+-- Compliance type catalog (Phase 9). Platform-wide, like `permissions` above —
+-- shared across every firm, not per-tenant. Drives calendar-driven statutory
+-- task generation (Phase 10): for each active client whose registrations/
+-- flags satisfy the applicability predicate, one task per period is upserted.
+-- department_code is a loose reference to departments.code (TEXT, not an FK) —
+-- departments are per-firm rows seeded from that same fixed code set, so a
+-- code match is resolved to the firm's own department at generation time.
+-- No hard delete: retire a type via is_active, mirroring clients/departments.
+CREATE TABLE public.compliance_types (
+  id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code                        TEXT NOT NULL UNIQUE,     -- 'gstr3b_monthly', 'tds_24q', ...
+  name                        TEXT NOT NULL,
+  department_code             TEXT NOT NULL,            -- 'gst' | 'income_tax' | 'audit' | 'roc' | 'accounting' | 'payroll'
+  periodicity                 public.compliance_periodicity NOT NULL,
+  -- Structured due-date rule interpreted by the Phase 10 generation engine.
+  -- Convention: {"due_day": 20, "months_after_period_end": 1} for monthly/
+  -- quarterly types due N months after the period closes; {"due_day": 31,
+  -- "due_month": 7} for a fixed calendar month/day annual due date. Statutory
+  -- due-date shifts (govt extensions) are NOT modeled here — see clients.notes.
+  due_day_rule                JSONB NOT NULL DEFAULT '{}'::jsonb,
+  -- Applicability predicate vs. a client's registrations/flags — ALL non-null
+  -- conditions must hold. NULL in any column = that condition doesn't apply.
+  requires_registration_type  public.registration_type,          -- e.g. 'gstin'
+  requires_gst_scheme          public.gst_scheme,                 -- narrows within gstin, e.g. 'qrmp'
+  requires_flag                TEXT,                              -- e.g. 'is_audit_applicable' (a clients boolean column)
+  applicable_business_types    TEXT[],                            -- NULL = all business types
+  is_active                    BOOLEAN NOT NULL DEFAULT true,
+  created_at                   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ============================================================================
@@ -220,6 +256,13 @@ CREATE TABLE public.clients (
   cin                   TEXT CHECK (cin  IS NULL OR cin  ~ '^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$'),
   incorporation_date    DATE,
   gst_registration_date DATE,
+  -- Audit applicability (Phase 9): drives whether a tax-audit compliance_types
+  -- row generates a task for this client, and (via requires_flag / due_day_rule
+  -- interpretation in Phase 10) shifts the ITR due date to the audit deadline.
+  is_audit_applicable   BOOLEAN NOT NULL DEFAULT false,
+  audit_type            TEXT CHECK (audit_type IS NULL OR audit_type IN (
+                          'tax_audit', 'statutory_audit', 'gst_audit', 'other'
+                        )),
   email                 TEXT,
   phone                 TEXT,
   notes                 TEXT,                      -- internal; never exposed to client_user UI
@@ -266,6 +309,28 @@ CREATE TABLE public.client_authorized_persons (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Statutory registrations (Phase 9): a client can hold several — multiple
+-- GSTINs (one per state), a TAN, PF/ESI/PT codes. Replaces the earlier
+-- single gstin/tan/pan columns on `clients` as the applicability source for
+-- compliance_types generation; those columns stay for the client's PRIMARY
+-- identifiers and search, this table is the full per-registration list.
+CREATE TABLE public.client_registrations (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  firm_id             UUID NOT NULL REFERENCES public.firms(id) ON DELETE CASCADE,
+  client_id           UUID NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  type                public.registration_type NOT NULL,
+  registration_number TEXT NOT NULL,
+  state               TEXT,             -- GST is state-wise; NULL for non-gstin types
+  state_code          TEXT,             -- GST state code, e.g. '27' (mirrors client_addresses)
+  gst_scheme          public.gst_scheme, -- only meaningful when type = 'gstin'
+  is_active           BOOLEAN NOT NULL DEFAULT true,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (type <> 'gstin' OR registration_number ~ '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$'),
+  CHECK (type <> 'tan'   OR registration_number ~ '^[A-Z]{4}[0-9]{5}[A-Z]$'),
+  UNIQUE (client_id, registration_number)
+);
+
 -- Portal invitations: how a client_user gets bound to exactly one client.
 -- Signup consumes the token via lookup_client_invitation() (§6) and the
 -- service-role client creates the profile with role='client_user' + client_id.
@@ -304,7 +369,16 @@ CREATE TABLE public.tasks (
   parent_task_id     UUID REFERENCES public.tasks(id) ON DELETE SET NULL,
   due_date           DATE NOT NULL,               -- internal working deadline
   statutory_due_date DATE,                        -- government deadline, if different
-  period_label       TEXT,                        -- 'FY 2025-26', 'May 2026 GSTR-3B', ...
+  period_label       TEXT,                        -- 'FY 2025-26', 'May 2026 GSTR-3B', ... (free-text, kept for manual/internal tasks)
+  -- Structured period fields (Phase 9) — statutory tasks use these instead of
+  -- (or alongside) period_label so the filing-status grid can group by period.
+  financial_year     TEXT CHECK (financial_year IS NULL OR financial_year ~ '^[0-9]{4}-[0-9]{2}$'), -- '2026-27'
+  period_type        TEXT CHECK (period_type IS NULL OR period_type IN ('monthly', 'quarterly', 'annual', 'event')),
+  period_key         TEXT,                        -- 'YYYY-MM' | 'YYYY-QN' (FY-aligned) | financial_year | event label
+  -- Provenance + classification (Phase 9).
+  source             TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'recurring', 'statutory')),
+  category           TEXT NOT NULL DEFAULT 'routine' CHECK (category IN ('routine', 'notice')),
+  compliance_type_id UUID REFERENCES public.compliance_types(id) ON DELETE RESTRICT,
   assigned_to        UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   reviewer_id        UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   visible_to_client  BOOLEAN NOT NULL DEFAULT true, -- curated portal: flip off for internal tasks
@@ -440,6 +514,10 @@ CREATE INDEX idx_invoices_firm            ON public.subscription_invoices(firm_i
 CREATE INDEX idx_clients_firm             ON public.clients(firm_id);
 CREATE INDEX idx_client_addresses_client  ON public.client_addresses(client_id);
 CREATE INDEX idx_client_auth_persons_client ON public.client_authorized_persons(client_id);
+CREATE INDEX idx_client_registrations_firm   ON public.client_registrations(firm_id);
+CREATE INDEX idx_client_registrations_client ON public.client_registrations(client_id);
+CREATE INDEX idx_client_registrations_type   ON public.client_registrations(type);
+CREATE INDEX idx_compliance_types_department ON public.compliance_types(department_code);
 CREATE INDEX idx_portal_invites_client    ON public.client_portal_invitations(client_id);
 CREATE INDEX idx_portal_invites_token     ON public.client_portal_invitations(token);
 CREATE INDEX idx_tasks_firm               ON public.tasks(firm_id);
@@ -449,6 +527,13 @@ CREATE INDEX idx_tasks_assigned           ON public.tasks(assigned_to);
 CREATE INDEX idx_tasks_stage              ON public.tasks(stage);
 CREATE INDEX idx_tasks_due_date           ON public.tasks(due_date);
 CREATE INDEX idx_tasks_parent             ON public.tasks(parent_task_id);
+CREATE INDEX idx_tasks_compliance_type    ON public.tasks(compliance_type_id) WHERE compliance_type_id IS NOT NULL;
+CREATE INDEX idx_tasks_source             ON public.tasks(source);
+-- One statutory task per client per compliance type per period — the
+-- idempotency key the Phase 10 generation engine upserts against.
+CREATE UNIQUE INDEX uq_statutory_task_per_period
+  ON public.tasks (client_id, compliance_type_id, period_key)
+  WHERE compliance_type_id IS NOT NULL AND period_key IS NOT NULL;
 CREATE INDEX idx_stage_history_task       ON public.task_stage_history(task_id);
 CREATE INDEX idx_comments_task            ON public.task_comments(task_id);
 CREATE INDEX idx_documents_firm           ON public.documents(firm_id);
@@ -677,6 +762,8 @@ CREATE TRIGGER on_subscription_updated  BEFORE UPDATE ON public.firm_subscriptio
 CREATE TRIGGER on_client_updated        BEFORE UPDATE ON public.clients               FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE TRIGGER on_client_address_updated BEFORE UPDATE ON public.client_addresses     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE TRIGGER on_client_person_updated  BEFORE UPDATE ON public.client_authorized_persons FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+CREATE TRIGGER on_client_registration_updated BEFORE UPDATE ON public.client_registrations FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+CREATE TRIGGER on_compliance_type_updated BEFORE UPDATE ON public.compliance_types      FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE TRIGGER on_task_updated          BEFORE UPDATE ON public.tasks                 FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE TRIGGER on_comment_updated       BEFORE UPDATE ON public.task_comments         FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE TRIGGER on_document_updated      BEFORE UPDATE ON public.documents             FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
@@ -874,6 +961,32 @@ INSERT INTO public.role_permissions (role, permission_key, allowed) VALUES
   ('employee', 'templates.manage',        false),
   ('employee', 'settings.manage',         false);
 
+-- Compliance type catalog (Phase 9) — the confidently-known core set from the
+-- feature-gap review. `due_day_rule` conventions: {"due_day": N,
+-- "months_after_period_end": N} for monthly/quarterly types due N months
+-- after the period closes; {"due_day": N, "due_month": N} for a fixed
+-- calendar month/day annual due date. Government due-date extensions are not
+-- modeled. ITR audit/non-audit are mutually exclusive by `requires_flag` —
+-- the Phase 10 generation engine picks exactly one per client per FY.
+INSERT INTO public.compliance_types
+  (code, name, department_code, periodicity, due_day_rule, requires_registration_type, requires_gst_scheme, requires_flag, applicable_business_types) VALUES
+  ('gstr1_monthly',        'GSTR-1 (Monthly)',           'gst',        'monthly',   '{"due_day": 11, "months_after_period_end": 1}', 'gstin', 'regular',     NULL, NULL),
+  ('gstr1_qrmp',           'GSTR-1 (QRMP)',              'gst',        'quarterly', '{"due_day": 13, "months_after_period_end": 1}', 'gstin', 'qrmp',        NULL, NULL),
+  ('gstr3b_monthly',       'GSTR-3B (Monthly)',          'gst',        'monthly',   '{"due_day": 20, "months_after_period_end": 1}', 'gstin', 'regular',     NULL, NULL),
+  ('gstr3b_qrmp',          'GSTR-3B (QRMP)',             'gst',        'quarterly', '{"due_day": 22, "months_after_period_end": 1}', 'gstin', 'qrmp',        NULL, NULL),
+  ('cmp08_quarterly',      'CMP-08 (Composition)',       'gst',        'quarterly', '{"due_day": 18, "months_after_period_end": 1}', 'gstin', 'composition', NULL, NULL),
+  ('gstr4_annual',         'GSTR-4 (Composition Annual)','gst',        'annual',    '{"due_day": 30, "due_month": 6}',                'gstin', 'composition', NULL, NULL),
+  ('gstr9_annual',         'GSTR-9 (Annual Return)',     'gst',        'annual',    '{"due_day": 31, "due_month": 12}',               'gstin', 'regular',     NULL, NULL),
+  ('tds_payment_monthly',  'TDS Payment (Challan)',      'income_tax', 'monthly',   '{"due_day": 7, "months_after_period_end": 1}',   'tan',   NULL,          NULL, NULL),
+  ('tds_24q_quarterly',    'TDS Return 24Q (Salary)',    'income_tax', 'quarterly', '{"due_day": 31, "months_after_period_end": 1}',  'tan',   NULL,          NULL, NULL),
+  ('tds_26q_quarterly',    'TDS Return 26Q (Non-Salary)','income_tax', 'quarterly', '{"due_day": 31, "months_after_period_end": 1}',  'tan',   NULL,          NULL, NULL),
+  ('advance_tax_quarterly','Advance Tax Installment',    'income_tax', 'quarterly', '{"due_day": 15, "note": "installment % differs by quarter"}', NULL, NULL, NULL, NULL),
+  ('itr_non_audit_annual', 'ITR Filing (Non-Audit)',     'income_tax', 'annual',    '{"due_day": 31, "due_month": 7}',                NULL,    NULL,          NULL, NULL),
+  ('itr_audit_annual',     'ITR Filing (Audit Cases)',   'income_tax', 'annual',    '{"due_day": 31, "due_month": 10}',               NULL,    NULL,          'is_audit_applicable', NULL),
+  ('tax_audit_report_annual','Tax Audit Report (3CA/3CB-3CD)','audit', 'annual',    '{"due_day": 30, "due_month": 9}',                NULL,    NULL,          'is_audit_applicable', NULL),
+  ('aoc4_annual',          'AOC-4 (Financial Statements)','roc',       'annual',    '{"due_day": 29, "due_month": 10}',               NULL,    NULL,          NULL, ARRAY['opc','pvt_ltd','public_ltd']),
+  ('mgt7_annual',          'MGT-7 (Annual Return)',      'roc',        'annual',    '{"due_day": 28, "due_month": 11}',               NULL,    NULL,          NULL, ARRAY['opc','pvt_ltd','public_ltd']);
+
 INSERT INTO public.plans (code, name, price_monthly_inr, price_yearly_inr, max_users, max_clients, storage_gb, features) VALUES
   ('starter',      'Starter',      999,  9990,  3,  50,   5,  '{"client_portal": false, "document_approvals": true,  "recurring_tasks": true, "reports": false}'),
   ('professional', 'Professional', 2499, 24990, 10, 250,  25, '{"client_portal": true,  "document_approvals": true,  "recurring_tasks": true, "reports": true}'),
@@ -897,6 +1010,8 @@ ALTER TABLE public.subscription_invoices      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients                    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.client_addresses           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.client_authorized_persons  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.client_registrations       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.compliance_types           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.client_portal_invitations  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tasks                      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_stage_history         ENABLE ROW LEVEL SECURITY;
@@ -1619,6 +1734,61 @@ CREATE POLICY "Template managers can update templates"
 CREATE POLICY "Template managers can delete templates"
   ON public.task_templates FOR DELETE TO authenticated
   USING (firm_id = public.get_user_firm_id() AND public.has_permission('templates.manage'));
+
+-- ---------------------------------------------------------------------------
+-- 11.21 compliance_types (Phase 9) — platform-wide catalog, same shape as
+-- §11.3 permissions/role_permissions: readable by every authenticated user
+-- (no tenant data in it), managed only by super admins. No DELETE policy —
+-- retire a type via is_active (mirrors clients/departments precedent).
+-- ---------------------------------------------------------------------------
+CREATE POLICY "Anyone authenticated can view active compliance types"
+  ON public.compliance_types FOR SELECT TO authenticated
+  USING (is_active OR public.is_super_admin());
+
+CREATE POLICY "Super admins manage compliance types"
+  ON public.compliance_types FOR ALL TO authenticated
+  USING (public.is_super_admin())
+  WITH CHECK (public.is_super_admin());
+
+-- ---------------------------------------------------------------------------
+-- 11.22 client_registrations (Phase 9) — mirrors §11.11 client_addresses /
+-- client_authorized_persons exactly: staff visibility follows clients.view
+-- or an own task for that client; client_users read only their own client's
+-- rows; writes are clients.manage-gated; no DELETE-by-clients precedent here
+-- either but registrations are genuinely removable (e.g. a cancelled GSTIN
+-- entered in error) so DELETE is permitted, unlike the parent `clients` row.
+-- ---------------------------------------------------------------------------
+CREATE POLICY "Staff can view registrations of visible clients"
+  ON public.client_registrations FOR SELECT TO authenticated
+  USING (
+    firm_id = public.get_user_firm_id()
+    AND public.is_firm_staff()
+    AND (
+      public.get_user_role() = 'partner'
+      OR public.has_permission('clients.view')
+      OR public.employee_has_task_for_client(client_id)
+    )
+  );
+
+CREATE POLICY "Client users can view their own client registrations"
+  ON public.client_registrations FOR SELECT TO authenticated
+  USING (client_id = public.get_user_client_id());
+
+CREATE POLICY "Super admins can view all client registrations"
+  ON public.client_registrations FOR SELECT TO authenticated
+  USING (public.is_super_admin());
+
+CREATE POLICY "Client managers can create registrations"
+  ON public.client_registrations FOR INSERT TO authenticated
+  WITH CHECK (firm_id = public.get_user_firm_id() AND public.has_permission('clients.manage'));
+
+CREATE POLICY "Client managers can update registrations"
+  ON public.client_registrations FOR UPDATE TO authenticated
+  USING (firm_id = public.get_user_firm_id() AND public.has_permission('clients.manage'));
+
+CREATE POLICY "Client managers can delete registrations"
+  ON public.client_registrations FOR DELETE TO authenticated
+  USING (firm_id = public.get_user_firm_id() AND public.has_permission('clients.manage'));
 
 -- ============================================================================
 -- 12. STORAGE POLICIES (bucket: 'client-documents')
