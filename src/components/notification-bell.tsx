@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Bell, Check, CheckCheck, MessageSquare, UserPlus, AlertTriangle, CheckCircle2, FileText } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { createClient } from '@/lib/supabase/client';
@@ -24,6 +25,7 @@ const typeConfig: Record<NotificationType, { icon: React.ElementType; color: str
 };
 
 export function NotificationBell() {
+  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -48,11 +50,20 @@ export function NotificationBell() {
     }
   }, []);
 
-  // Fetch on mount and set up polling
+  // Fetch on mount and set up polling. The fetch is wrapped in a local
+  // function (rather than calling fetchNotifications directly) so the poll
+  // can be cancelled on unmount without setting state after the fact.
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000); // Poll every 30s
-    return () => clearInterval(interval);
+    let cancelled = false;
+    async function poll() {
+      if (!cancelled) await fetchNotifications();
+    }
+    poll();
+    const interval = setInterval(poll, 30000); // Poll every 30s
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [fetchNotifications]);
 
   // Close dropdown on outside click
@@ -91,7 +102,7 @@ export function NotificationBell() {
     }
     // Navigate to the referenced item if applicable
     if (notification.reference_type === 'task' && notification.reference_id) {
-      window.location.href = `/tasks/${notification.reference_id}`;
+      router.push(`/tasks/${notification.reference_id}`);
     }
     setIsOpen(false);
   };
