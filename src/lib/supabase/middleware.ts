@@ -60,9 +60,14 @@ export async function updateSession(request: NextRequest) {
     matchesPrefix(pathname, p)
   );
   // /portal/accept-invite is public: it's where invited clients land BEFORE
-  // they have an account.
+  // they have an account. /api/* routes (Phase 10: the statutory-generation
+  // cron endpoint) authenticate themselves (e.g. a bearer secret checked
+  // against CRON_SECRET) — they must never be swept into the cookie-session
+  // redirect below, which would otherwise send every unauthenticated request
+  // (including Vercel Cron's) to /login before the route handler runs.
+  const isApiRoute = pathname.startsWith('/api/');
   const isPublicPage =
-    pathname === '/' || pathname.startsWith('/auth') || isAcceptInvitePage;
+    pathname === '/' || pathname.startsWith('/auth') || isAcceptInvitePage || isApiRoute;
 
   // Auth guard: redirect unauthenticated users to login
   if (!user && !isAuthPage && !isPublicPage && !isOnboardingPage) {
