@@ -19,8 +19,6 @@ export async function getAuthContext(): Promise<{
   userId: string;
   profile: Profile;
   firm: Firm;
-  /** @deprecated Alias of `firm` so not-yet-ported DeadlineTracker pages keep compiling. */
-  organization: Firm;
   /** The one bound client for client_user logins; null for staff. */
   clientId: string | null;
   /** True if the user is in platform_admins — gates the future /admin surface. */
@@ -65,7 +63,6 @@ export async function getAuthContext(): Promise<{
     userId: user.id,
     profile: typedProfile,
     firm: firm as Firm,
-    organization: firm as Firm,
     clientId: typedProfile.client_id ?? null,
     isSuperAdmin: superAdminResult.data === true,
   };

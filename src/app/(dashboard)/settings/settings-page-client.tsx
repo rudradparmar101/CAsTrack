@@ -9,14 +9,14 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { updateProfileAction, updateOrganizationAction, changePasswordAction } from './actions';
 import { createClient } from '@/lib/supabase/client';
-import type { Profile, Organization } from '@/lib/types';
+import type { Profile, Firm } from '@/lib/types';
 
 interface SettingsPageClientProps {
   profile: Profile;
-  organization: Organization | null;
+  firm: Firm | null;
 }
 
-export function SettingsPageClient({ profile, organization }: SettingsPageClientProps) {
+export function SettingsPageClient({ profile, firm }: SettingsPageClientProps) {
   const router = useRouter();
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
@@ -49,9 +49,9 @@ export function SettingsPageClient({ profile, organization }: SettingsPageClient
     startTransition(async () => {
       const result = await updateOrganizationAction(formData);
       if (result.success) {
-        showMessage('Organization updated successfully.', 'success');
+        showMessage('Firm updated successfully.', 'success');
       } else {
-        showMessage(result.error || 'Failed to update organization.', 'error');
+        showMessage(result.error || 'Failed to update firm.', 'error');
       }
     });
   };
@@ -171,7 +171,7 @@ export function SettingsPageClient({ profile, organization }: SettingsPageClient
       </Card>
 
       {/* Firm (Partner only) */}
-      {profile.role === 'partner' && organization && (
+      {profile.role === 'partner' && firm && (
         <Card>
           <CardHeader>
             <CardTitle>Firm</CardTitle>
@@ -180,12 +180,12 @@ export function SettingsPageClient({ profile, organization }: SettingsPageClient
             <Input
               label="Firm Name"
               name="orgName"
-              defaultValue={organization.name}
+              defaultValue={firm.name}
               required
             />
             <Input
               label="Invite Code"
-              value={organization.invite_code}
+              value={firm.invite_code}
               disabled
               hint="Share this code with new team members."
             />

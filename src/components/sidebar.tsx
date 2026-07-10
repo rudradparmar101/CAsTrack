@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import type { Profile, Organization } from '@/lib/types';
+import type { Profile, Firm } from '@/lib/types';
 import {
   LayoutDashboard,
   Users,
@@ -19,7 +19,7 @@ import {
 
 interface SidebarProps {
   profile: Profile;
-  organization: Organization;
+  firm: Firm;
   open: boolean;
   onClose: () => void;
 }
@@ -40,14 +40,12 @@ const memberNavItems = [
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
-export function Sidebar({ profile, organization, open, onClose }: SidebarProps) {
+export function Sidebar({ profile, firm, open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   // CA roles: partners get the full staff nav; employees get the scoped one
-  // (RLS decides what they see inside each page). 'admin' is the legacy
-  // DeadlineTracker role kept until the remaining pages are ported.
-  const navItems =
-    profile.role === 'partner' || profile.role === 'admin' ? adminNavItems : memberNavItems;
+  // (RLS decides what they see inside each page).
+  const navItems = profile.role === 'partner' ? adminNavItems : memberNavItems;
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -93,13 +91,13 @@ export function Sidebar({ profile, organization, open, onClose }: SidebarProps) 
           </button>
         </div>
 
-        {/* Organization */}
+        {/* Firm */}
         <div className="px-5 py-3 border-b border-white/10">
           <p className="text-xs font-medium text-[var(--color-sidebar-text)] uppercase tracking-wider">
-            Organization
+            Firm
           </p>
           <p className="text-sm font-medium text-[var(--color-sidebar-active)] mt-1 truncate">
-            {organization.name}
+            {firm.name}
           </p>
         </div>
 

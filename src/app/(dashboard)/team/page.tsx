@@ -6,7 +6,7 @@ import { MEMBERS_PAGE_SIZE } from '@/lib/pagination';
 import type { DepartmentWithMembers } from '@/lib/types';
 
 export default async function TeamPage() {
-  const { supabase, userId, profile, organization } = await getAuthContext();
+  const { supabase, userId, profile, firm } = await getAuthContext();
 
   if (profile.role !== 'partner') {
     const { data: allowed } = await supabase.rpc('has_permission', { p_key: 'team.view' });
@@ -48,7 +48,7 @@ export default async function TeamPage() {
       members={members || []}
       allMembersLite={allMembersLite || []}
       departments={(departments as DepartmentWithMembers[]) || []}
-      organization={{ invite_code: organization.invite_code }}
+      firm={{ invite_code: firm.invite_code }}
       currentUserId={userId}
       initialHasMore={(members || []).length === MEMBERS_PAGE_SIZE}
     />

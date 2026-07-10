@@ -2,7 +2,7 @@ import React from 'react';
 import { redirect } from 'next/navigation';
 import { getAuthContext } from '@/lib/auth';
 import { TemplatesPageClient } from './templates-page-client';
-import type { TaskTemplate } from '@/lib/types';
+import type { FirmTaskTemplate } from '@/lib/types';
 
 export default async function TemplatesPage() {
   const { supabase, profile } = await getAuthContext();
@@ -23,7 +23,7 @@ export default async function TemplatesPage() {
 
   return (
     <TemplatesPageClient
-      templates={(templates as TaskTemplate[]) || []}
+      templates={(templates as FirmTaskTemplate[]) || []}
       departments={departments || []}
     />
   );

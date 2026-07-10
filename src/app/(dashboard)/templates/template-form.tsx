@@ -5,10 +5,10 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import type { TaskTemplate, ActionResult } from '@/lib/types';
+import type { FirmTaskTemplate, ActionResult } from '@/lib/types';
 
 interface TemplateFormProps {
-  template?: TaskTemplate;
+  template?: FirmTaskTemplate;
   departments: { id: string; name: string }[];
   action: (formData: FormData) => Promise<ActionResult>;
   onSuccess: () => void;

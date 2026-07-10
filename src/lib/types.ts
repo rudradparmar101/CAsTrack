@@ -1,17 +1,13 @@
 // ============================================
-// Core Types for DeadlineTracker
+// Core Types — CA Firm Management SaaS
 // ============================================
 
 // ---- Enums ----
 
-// 'admin' | 'member' are legacy DeadlineTracker roles, kept in the union only so
-// not-yet-ported dashboard code still type-checks. The CA schema uses the first three;
 // super_admin is NOT a profile role (it's membership in platform_admins).
-export type UserRole = 'partner' | 'employee' | 'client_user' | 'admin' | 'member';
-export type TaskStatus = 'pending' | 'completed' | 'pending_approval' | 'approved' | 'rejected';
+export type UserRole = 'partner' | 'employee' | 'client_user';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
 export type RecurrenceRule = 'none' | 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
-export type ReviewStatus = 'none' | 'pending_approval' | 'approved' | 'rejected';
 
 export type NotificationType =
   | 'task_assigned'
@@ -24,24 +20,6 @@ export type NotificationType =
   | 'task_approved'
   | 'task_rejected'
   | 'document_uploaded';
-
-export type ActivityType =
-  | 'task_created'
-  | 'assignment_changed'
-  | 'status_changed'
-  | 'priority_changed'
-  | 'due_date_changed'
-  | 'comment_added'
-  | 'comment_edited'
-  | 'comment_deleted'
-  | 'attachment_uploaded'
-  | 'attachment_deleted'
-  | 'task_completed'
-  | 'task_approved'
-  | 'task_rejected'
-  | 'reviewer_changed'
-  | 'team_assigned'
-  | 'recurring_generated';
 
 // ---- Database Row Types ----
 
@@ -59,9 +37,6 @@ export interface Firm {
   created_at: string;
   updated_at: string;
 }
-
-/** @deprecated Legacy DeadlineTracker name — the CA schema calls this `firms`. Use `Firm`. */
-export type Organization = Firm;
 
 export interface Profile {
   id: string;
@@ -255,8 +230,7 @@ export interface Department {
 }
 
 /** A tasks row in the CA schema. `status` is derived from `stage` by trigger —
- *  never write it. Named FirmTask while the legacy `Task` type still exists
- *  for unported dashboard pages. */
+ *  never write it. */
 export interface FirmTask {
   id: string;
   firm_id: string;
@@ -364,85 +338,19 @@ export interface FirmTaskTemplate {
   updated_at: string;
 }
 
-// ============================================
-// Legacy DeadlineTracker types below — kept only so unported pages
-// (dashboard, team, templates, settings) still compile. Do not use in new code.
-// ============================================
-
-/** @deprecated Legacy DeadlineTracker shape — use FirmTask for the CA schema. */
-export interface Task {
-  id: string;
-  title: string;
-  description: string;
-  client_id: string;
-  firm_id: string;
-  due_date: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  recurring_rule: RecurrenceRule;
-  parent_task_id: string | null;
-  assigned_to: string | null;
-  department_id: string | null;
-  review_status: ReviewStatus;
-  reviewer_id: string | null;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Department {
-  id: string;
-  firm_id: string;
-  code: string;
-  name: string;
-  is_active: boolean;
-  created_at: string;
-}
-
 export interface DepartmentMember {
   department_id: string;
   user_id: string;
   joined_at: string;
 }
 
-export interface TaskComment {
-  id: string;
-  task_id: string;
-  organization_id: string;
-  content: string;
-  mentions: string[];
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface TaskAttachment {
-  id: string;
-  task_id: string;
-  organization_id: string;
-  file_name: string;
-  file_path: string;
-  file_type: string;
-  file_size: number;
-  uploaded_by: string;
-  created_at: string;
-}
-
-export interface TaskActivity {
-  id: string;
-  task_id: string;
-  organization_id: string;
-  actor_id: string;
-  action_type: ActivityType;
-  old_value: Record<string, unknown> | null;
-  new_value: Record<string, unknown> | null;
-  created_at: string;
-}
-
+/** Real-time bell (notification-bell.tsx) fetches straight from the
+ *  `notifications` table with no server-side join, so this stays a plain
+ *  row type rather than a Firm*-prefixed one. */
 export interface Notification {
   id: string;
   user_id: string;
-  organization_id: string;
+  firm_id: string;
   type: NotificationType;
   title: string;
   message: string;
@@ -452,29 +360,6 @@ export interface Notification {
   created_at: string;
 }
 
-export interface TeamTemplate {
-  id: string;
-  name: string;
-  description: string;
-  default_roles: string[];
-  is_system: boolean;
-  created_at: string;
-}
-
-export interface TaskTemplate {
-  id: string;
-  firm_id: string;
-  department_id: string | null;
-  title: string;
-  description: string;
-  default_priority: TaskPriority;
-  checklist_items: ChecklistItem[];
-  recurring_rule: RecurrenceRule;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface ChecklistItem {
   id: string;
   text: string;
@@ -482,31 +367,6 @@ export interface ChecklistItem {
 }
 
 // ---- Joined / View Types ----
-
-export interface TaskWithDetails extends Task {
-  clients: Pick<Client, 'id' | 'name'>;
-  assigned_profile: Pick<Profile, 'id' | 'name'> | null;
-  assigned_team?: Pick<Department, 'id' | 'name'> | null;
-  reviewer_profile?: Pick<Profile, 'id' | 'name'> | null;
-}
-
-export interface TaskWithFullDetails extends TaskWithDetails {
-  comments: TaskCommentWithAuthor[];
-  attachments: TaskAttachmentWithUploader[];
-  activities: TaskActivityWithActor[];
-}
-
-export interface TaskCommentWithAuthor extends TaskComment {
-  author: Pick<Profile, 'id' | 'name' | 'email'>;
-}
-
-export interface TaskAttachmentWithUploader extends TaskAttachment {
-  uploader: Pick<Profile, 'id' | 'name'>;
-}
-
-export interface TaskActivityWithActor extends TaskActivity {
-  actor: Pick<Profile, 'id' | 'name'>;
-}
 
 export interface DepartmentWithMembers extends Department {
   members: DepartmentMemberWithProfile[];
@@ -518,31 +378,6 @@ export interface DepartmentMemberWithProfile extends DepartmentMember {
 
 export interface ClientWithCreator extends Client {
   creator: Pick<Profile, 'id' | 'name'>;
-}
-
-// Future: add joined reference details
-export type NotificationWithDetails = Notification;
-
-// ---- Analytics Types ----
-
-export interface DashboardStats {
-  totalTasks: number;
-  pendingTasks: number;
-  completedTasks: number;
-  overdueTasks: number;
-  dueThisWeek: number;
-  activeClients: number;
-  teamCount: number;
-  employeeCount: number;
-}
-
-export interface EmployeeWorkload {
-  profile: Pick<Profile, 'id' | 'name' | 'email'>;
-  totalAssigned: number;
-  overdue: number;
-  completed: number;
-  pending: number;
-  completionRate: number;
 }
 
 // ---- Form / Action Types ----

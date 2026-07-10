@@ -289,9 +289,9 @@ export async function updateTaskAction(formData: FormData): Promise<ActionResult
 
 // ---- stage machine ---------------------------------------------------------
 
-/** Core transition, shared by changeTaskStageAction and the legacy-compatible
- *  markTaskCompleteAction. The DB trigger is the authority; the app-layer
- *  check only produces friendly errors for employees. */
+/** Core transition, used by changeTaskStageAction. The DB trigger is the
+ *  authority; the app-layer check only produces friendly errors for
+ *  employees. */
 async function changeStageCore(
   supabase: Supabase,
   userId: string,
@@ -651,36 +651,4 @@ export async function deleteTaskAction(taskId: string): Promise<ActionResult> {
 
   revalidateTaskViews();
   return { success: true };
-}
-
-// ---- legacy-compatible exports ----------------------------------------------
-// components/task-card.tsx (still used by the unported dashboard) imports
-// markTaskCompleteAction/deleteTaskAction. Completion is now a stage
-// transition, so this delegates to the stage machine.
-
-export async function markTaskCompleteAction(taskId: string): Promise<ActionResult> {
-  const guard = await requireStaff();
-  if (!guard.ok) return { success: false, error: guard.error };
-  const { supabase, userId, profile } = guard;
-
-  const { data: task } = await supabase
-    .from('tasks')
-    .select('stage, reviewer_id')
-    .eq('id', taskId)
-    .single();
-
-  if (!task) return { success: false, error: 'Task not found or access denied.' };
-
-  const current = task.stage as TaskStage;
-  if (
-    profile.role !== 'partner' &&
-    !allowedTransitions(current, !!task.reviewer_id).includes('completed')
-  ) {
-    return {
-      success: false,
-      error: `This task is in ${stageLabel(current)} — move it through the stage workflow${task.reviewer_id ? ' (it requires review)' : ''} instead.`,
-    };
-  }
-
-  return changeStageCore(supabase, userId, profile, taskId, 'completed');
 }

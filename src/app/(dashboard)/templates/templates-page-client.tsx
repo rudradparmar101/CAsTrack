@@ -9,16 +9,16 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PriorityBadge } from '@/components/priority-badge';
 import { TemplateForm } from './template-form';
 import { createTemplateAction, updateTemplateAction, deleteTemplateAction } from './actions';
-import type { TaskTemplate } from '@/lib/types';
+import type { FirmTaskTemplate } from '@/lib/types';
 
 interface TemplatesPageClientProps {
-  templates: TaskTemplate[];
+  templates: FirmTaskTemplate[];
   departments: { id: string; name: string }[];
 }
 
 export function TemplatesPageClient({ templates, departments }: TemplatesPageClientProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<FirmTaskTemplate | null>(null);
 
   const handleDelete = async (id: string, title: string) => {
     if (!confirm(`Delete template "${title}"? This cannot be undone.`)) return;

@@ -2,14 +2,14 @@
 
 import React from 'react';
 import { isPast, isToday, differenceInDays } from 'date-fns';
-import { ListTodo, CheckCircle2, AlertTriangle, Clock, TrendingUp } from 'lucide-react';
+import { ListTodo, AlertTriangle, Clock, TrendingUp } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { TaskCard } from '@/components/task-card';
+import { TaskSummaryCard } from '@/components/task/task-summary-card';
 import { EmptyState } from '@/components/ui/empty-state';
-import type { TaskWithDetails } from '@/lib/types';
+import type { FirmTaskWithRefs } from '@/lib/types';
 
 interface MemberDashboardProps {
-  tasks: TaskWithDetails[];
+  tasks: FirmTaskWithRefs[];
 }
 
 export function MemberDashboard({ tasks }: MemberDashboardProps) {
@@ -97,7 +97,7 @@ export function MemberDashboard({ tasks }: MemberDashboardProps) {
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {overdueTasks.map((task) => (
-              <TaskCard key={task.id} task={task} isAdmin={false} />
+              <TaskSummaryCard key={task.id} task={task} />
             ))}
           </div>
         </section>
@@ -111,7 +111,7 @@ export function MemberDashboard({ tasks }: MemberDashboardProps) {
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {pendingTasks.map((task) => (
-              <TaskCard key={task.id} task={task} isAdmin={false} />
+              <TaskSummaryCard key={task.id} task={task} />
             ))}
           </div>
         </section>
@@ -125,7 +125,7 @@ export function MemberDashboard({ tasks }: MemberDashboardProps) {
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {completedTasks.map((task) => (
-              <TaskCard key={task.id} task={task} isAdmin={false} />
+              <TaskSummaryCard key={task.id} task={task} />
             ))}
           </div>
         </section>

@@ -18,7 +18,7 @@ interface TeamPageClientProps {
   members: Profile[];
   allMembersLite: { id: string; name: string; email: string }[];
   departments: DepartmentWithMembers[];
-  organization: { invite_code: string };
+  firm: { invite_code: string };
   currentUserId: string;
   initialHasMore: boolean;
 }
@@ -27,7 +27,7 @@ export function TeamPageClient({
   members,
   allMembersLite,
   departments,
-  organization,
+  firm,
   currentUserId,
   initialHasMore,
 }: TeamPageClientProps) {
@@ -85,7 +85,7 @@ export function TeamPageClient({
       </div>
 
       {/* Invite Code */}
-      <TeamInviteCode inviteCode={organization.invite_code} />
+      <TeamInviteCode inviteCode={firm.invite_code} />
 
       {actionError && (
         <div className="rounded-lg bg-[var(--color-danger-bg)] text-[var(--color-danger)] text-sm px-4 py-3 animate-fade-in">

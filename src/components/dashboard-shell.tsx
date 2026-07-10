@@ -1,19 +1,19 @@
 'use client';
 
 import React, { useState } from 'react';
-import type { Profile, Organization } from '@/lib/types';
+import type { Profile, Firm } from '@/lib/types';
 import { Sidebar } from '@/components/sidebar';
 import { Topbar } from '@/components/topbar';
 
 interface DashboardShellProps {
   profile: Profile;
-  organization: Organization;
+  firm: Firm;
   children: React.ReactNode;
 }
 
 export function DashboardShell({
   profile,
-  organization,
+  firm,
   children,
 }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -22,7 +22,7 @@ export function DashboardShell({
     <div className="flex h-screen overflow-hidden">
       <Sidebar
         profile={profile}
-        organization={organization}
+        firm={firm}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />

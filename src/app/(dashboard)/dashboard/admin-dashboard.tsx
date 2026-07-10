@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { isPast, isToday, differenceInDays, format } from 'date-fns';
+import { isPast, isToday, differenceInDays } from 'date-fns';
 import {
   AlertTriangle,
   Clock,
@@ -14,12 +14,12 @@ import {
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { TaskCard } from '@/components/task-card';
+import { TaskSummaryCard } from '@/components/task/task-summary-card';
 import { EmptyState } from '@/components/ui/empty-state';
-import type { TaskWithDetails, TaskPriority } from '@/lib/types';
+import type { FirmTaskWithRefs, TaskPriority } from '@/lib/types';
 
 interface AdminDashboardProps {
-  tasks: TaskWithDetails[];
+  tasks: FirmTaskWithRefs[];
   departments: { id: string; name: string }[];
 }
 
@@ -67,7 +67,7 @@ export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
   // Client workload (top 5 by pending tasks)
   const clientMap = new Map<string, { name: string; pending: number; completed: number }>();
   for (const t of tasks) {
-    const cName = t.clients?.name || 'Unknown';
+    const cName = t.client?.name || 'Unknown';
     const cId = t.client_id;
     if (!clientMap.has(cId)) {
       clientMap.set(cId, { name: cName, pending: 0, completed: 0 });
@@ -241,7 +241,7 @@ export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {overdueTasks.map((task) => (
-              <TaskCard key={task.id} task={task} isAdmin />
+              <TaskSummaryCard key={task.id} task={task} />
             ))}
           </div>
         </section>
@@ -255,7 +255,7 @@ export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {dueSoonTasks.map((task) => (
-              <TaskCard key={task.id} task={task} isAdmin />
+              <TaskSummaryCard key={task.id} task={task} />
             ))}
           </div>
         </section>
@@ -269,7 +269,7 @@ export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {unassignedTasks.map((task) => (
-              <TaskCard key={task.id} task={task} isAdmin />
+              <TaskSummaryCard key={task.id} task={task} />
             ))}
           </div>
         </section>
@@ -283,7 +283,7 @@ export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
           </h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {completedTasks.slice(0, 6).map((task) => (
-              <TaskCard key={task.id} task={task} isAdmin />
+              <TaskSummaryCard key={task.id} task={task} />
             ))}
           </div>
         </section>

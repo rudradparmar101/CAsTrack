@@ -8,7 +8,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { profile, organization } = await getAuthContext();
+  const { profile, firm } = await getAuthContext();
 
   // Defense-in-depth on top of middleware + RLS: the staff surface must never
   // render for a client portal login, even if middleware is bypassed.
@@ -17,7 +17,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <DashboardShell profile={profile} organization={organization}>
+    <DashboardShell profile={profile} firm={firm}>
       {children}
     </DashboardShell>
   );
