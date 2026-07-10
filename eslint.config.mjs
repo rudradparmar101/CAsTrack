@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Archived DeadlineTracker reference code (Deno edge function + old SQL) —
+    // not part of the app, not held to its lint standards. See its README.
+    "supabase/_legacy-deadlinetracker/**",
   ]),
 ]);
 
