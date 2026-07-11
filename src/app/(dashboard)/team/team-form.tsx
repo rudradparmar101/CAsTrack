@@ -56,7 +56,7 @@ export function TeamForm({
         required
       />
 
-      <div className="flex items-center justify-end gap-3 pt-2">
+      <div className="flex items-center justify-end gap-3 pt-4 sticky bottom-0 -mx-6 px-6 pb-2 bg-[var(--color-surface)] border-t border-[var(--color-border)]">
         <Button type="button" variant="ghost" onClick={onCancel}>
           Cancel
         </Button>

@@ -227,7 +227,7 @@ export function TaskForm({
         </div>
       )}
 
-      <div className="flex gap-3 justify-end pt-2">
+      <div className="flex gap-3 justify-end pt-4 sticky bottom-0 -mx-6 px-6 pb-2 bg-[var(--color-surface)] border-t border-[var(--color-border)]">
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel
         </Button>

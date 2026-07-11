@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -47,10 +48,24 @@ export function Modal({
 
   if (!open) return null;
 
-  return (
+  // Portaled straight to <body>: every page root in this app uses
+  // .animate-fade-in/.animate-scale-in (transform-based, `forwards` fill
+  // mode — see globals.css), which leaves a permanent (identity) transform
+  // on the element after the animation finishes. Any CSS transform on an
+  // ancestor creates a new containing block for `position: fixed`
+  // descendants, so a Modal rendered inline (a normal child in the React
+  // tree) would size/position itself against that animated ancestor's box
+  // instead of the real viewport — exactly the reported bug (header/title
+  // rendered off the top of the screen with nothing to scroll it into
+  // view). A portal escapes that ancestor chain entirely.
+  return createPortal(
+    // overflow-y-auto (not flex+items-center on this element) so tall
+    // content can be scrolled to instead of clipped at the viewport edge —
+    // centering happens one level in, on a `min-h-full` wrapper, which
+    // avoids the classic flexbox-centering-clips-overflow quirk.
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 overflow-y-auto p-4 sm:py-8"
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose();
       }}
@@ -58,31 +73,38 @@ export function Modal({
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" />
 
-      {/* Content */}
-      <div
-        className={`
-          relative w-full ${maxWidthClasses[maxWidth]}
-          bg-[var(--color-surface)] rounded-xl shadow-xl
-          border border-[var(--color-border)]
-          animate-scale-in
-        `}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
-          <h2 className="text-lg font-semibold text-[var(--color-text)]">
-            {title}
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-muted)] transition-colors focus-ring"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+      {/* Centering wrapper */}
+      <div className="relative flex min-h-full items-center justify-center">
+        {/* Content — capped to the viewport height; header/body split so the
+            body is the only part that scrolls internally. */}
+        <div
+          className={`
+            relative w-full ${maxWidthClasses[maxWidth]} max-h-[90vh] flex flex-col
+            bg-[var(--color-surface)] rounded-xl shadow-xl
+            border border-[var(--color-border)]
+            animate-scale-in
+          `}
+        >
+          {/* Header — pinned */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] shrink-0">
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">
+              {title}
+            </h2>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-muted)] transition-colors focus-ring"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-        {/* Body */}
-        <div className="px-6 py-5">{children}</div>
+          {/* Body — the only scrollable region; children's own footer row
+              (Cancel/Submit) uses `sticky bottom-0` to stay pinned in view
+              while the fields above it scroll. */}
+          <div className="px-6 py-5 flex-1 overflow-y-auto min-h-0">{children}</div>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

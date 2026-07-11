@@ -468,7 +468,7 @@ function InvitePortalForm({
         </div>
       )}
 
-      <div className="flex justify-end pt-2">
+      <div className="flex justify-end pt-4 sticky bottom-0 -mx-6 px-6 pb-2 bg-[var(--color-surface)] border-t border-[var(--color-border)]">
         <Button type="submit" loading={loading}>
           <Send className="h-4 w-4" />
           Create invitation

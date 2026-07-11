@@ -220,7 +220,10 @@ export function ClientForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="max-h-[65vh] overflow-y-auto pr-1 space-y-6">
+      {/* No longer its own scroll region — the Modal's body wrapper owns
+          scrolling for the whole dialog now, so nested overflow here would
+          create a scroll-within-a-scroll. */}
+      <div className="space-y-6">
         {/* ── Basic details ── */}
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -621,7 +624,7 @@ export function ClientForm({
         </div>
       )}
 
-      <div className="flex gap-3 justify-end pt-2">
+      <div className="flex gap-3 justify-end pt-4 sticky bottom-0 -mx-6 px-6 pb-2 bg-[var(--color-surface)] border-t border-[var(--color-border)]">
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel
         </Button>
