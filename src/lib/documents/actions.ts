@@ -314,6 +314,7 @@ export async function approveDocumentAction(documentId: string): Promise<ActionR
     message: `"${updated.name}" was approved`,
     referenceId: updated.task_id ?? documentId,
     referenceType: updated.task_id ? 'task' : 'document',
+    sendEmail: true,
   });
 
   revalidateDocumentViews(updated.client_id, updated.task_id);
@@ -378,6 +379,7 @@ export async function rejectDocumentAction(
     message: `"${updated.name}" was rejected: ${trimmedReason}`,
     referenceId: updated.task_id ?? documentId,
     referenceType: updated.task_id ? 'task' : 'document',
+    sendEmail: true,
   });
 
   revalidateDocumentViews(updated.client_id, updated.task_id);

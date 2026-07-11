@@ -272,7 +272,8 @@ export type TaskActivityAction =
   | 'document_approved'
   | 'document_rejected'
   | 'recurring_generated'
-  | 'filing_outcome_recorded';
+  | 'filing_outcome_recorded'
+  | 'reminder_sent';
 
 export interface Department {
   id: string;

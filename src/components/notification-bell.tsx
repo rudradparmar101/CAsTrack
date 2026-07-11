@@ -24,7 +24,13 @@ const typeConfig: Record<NotificationType, { icon: React.ElementType; color: str
   document_uploaded: { icon: FileText, color: 'text-[var(--color-info)]' },
 };
 
-export function NotificationBell() {
+interface NotificationBellProps {
+  /** Task-reference notifications link to `${basePath}/${reference_id}` —
+   *  '/tasks' for staff (default), '/portal/tasks' for the client portal. */
+  basePath?: string;
+}
+
+export function NotificationBell({ basePath = '/tasks' }: NotificationBellProps) {
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -102,7 +108,7 @@ export function NotificationBell() {
     }
     // Navigate to the referenced item if applicable
     if (notification.reference_type === 'task' && notification.reference_id) {
-      router.push(`/tasks/${notification.reference_id}`);
+      router.push(`${basePath}/${notification.reference_id}`);
     }
     setIsOpen(false);
   };

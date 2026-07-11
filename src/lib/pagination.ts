@@ -4,3 +4,5 @@
 export const TASKS_PAGE_SIZE = 24;
 export const CLIENTS_PAGE_SIZE = 20;
 export const MEMBERS_PAGE_SIZE = 20;
+export const PORTAL_TASKS_PAGE_SIZE = 20;
+export const PORTAL_DOCUMENTS_PAGE_SIZE = 20;

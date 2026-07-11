@@ -1,14 +1,14 @@
 import React from 'react';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { format } from 'date-fns';
-import { Building2, Calendar, CheckSquare, ChevronRight, Hourglass } from 'lucide-react';
+import { Building2, CheckSquare, Hourglass } from 'lucide-react';
 import { getAuthContext } from '@/lib/auth';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
-import { DocumentsSection } from '@/components/documents-section';
-import { StageBadge } from '@/components/task/stage-badge';
+import { NotificationBell } from '@/components/notification-bell';
 import { PortalSignOutButton } from './sign-out-button';
+import { PortalTaskList } from './portal-task-list';
+import { PortalDocumentsSection } from './portal-documents-section';
+import { PORTAL_TASKS_PAGE_SIZE, PORTAL_DOCUMENTS_PAGE_SIZE } from '@/lib/pagination';
 import type { ClientDocumentWithDetails, FirmTask } from '@/lib/types';
 
 const DOCUMENTS_BUCKET = 'client-documents';
@@ -31,24 +31,34 @@ export default async function PortalPage() {
     redirect('/dashboard');
   }
 
-  const [{ data: client }, { data: tasks }, { data: documents }] = await Promise.all([
-    supabase.from('clients').select('id, name').eq('id', clientId).single(),
-    supabase
-      .from('tasks')
-      .select('*')
-      .order('status', { ascending: false }) // 'pending' sorts before 'completed'
-      .order('due_date', { ascending: true }),
-    supabase
-      .from('documents')
-      .select(
-        '*, uploader:uploaded_by(id, name), reviewer:reviewed_by(id, name), versions:document_versions(*, uploader:uploaded_by(id, name))'
-      )
-      .eq('client_id', clientId)
-      .order('created_at', { ascending: false }),
-  ]);
+  const [{ data: client }, { data: tasks }, { data: documents }, { count: waitingCount }] =
+    await Promise.all([
+      supabase.from('clients').select('id, name').eq('id', clientId).single(),
+      supabase
+        .from('tasks')
+        .select('*')
+        .order('status', { ascending: false }) // 'pending' sorts before 'completed'
+        .order('due_date', { ascending: true })
+        .range(0, PORTAL_TASKS_PAGE_SIZE - 1),
+      supabase
+        .from('documents')
+        .select(
+          '*, uploader:uploaded_by(id, name), reviewer:reviewed_by(id, name), versions:document_versions(*, uploader:uploaded_by(id, name))'
+        )
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false })
+        .range(0, PORTAL_DOCUMENTS_PAGE_SIZE - 1),
+      // Independent count so the "waiting on you" banner stays accurate even
+      // when a waiting task falls past the first page of the (unfiltered,
+      // due-date-sorted) task list above.
+      supabase
+        .from('tasks')
+        .select('id', { count: 'exact', head: true })
+        .eq('stage', 'waiting_client'),
+    ]);
 
   const clientTasks = (tasks as FirmTask[]) || [];
-  const waitingCount = clientTasks.filter((t) => t.stage === 'waiting_client').length;
+  const tasksHasMore = clientTasks.length === PORTAL_TASKS_PAGE_SIZE;
 
   // 1-hour signed download URLs, generated server-side.
   const docsWithUrls: ClientDocumentWithDetails[] = await Promise.all(
@@ -78,7 +88,10 @@ export default async function PortalPage() {
               <p className="text-xs text-[var(--color-text-muted)]">Client Portal</p>
             </div>
           </div>
-          <PortalSignOutButton />
+          <div className="flex items-center gap-2">
+            <NotificationBell basePath="/portal/tasks" />
+            <PortalSignOutButton />
+          </div>
         </div>
       </header>
 
@@ -93,7 +106,7 @@ export default async function PortalPage() {
           </p>
         </div>
 
-        {waitingCount > 0 && (
+        {!!waitingCount && waitingCount > 0 && (
           <div className="rounded-lg bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] px-4 py-3 flex items-start gap-2.5">
             <Hourglass className="h-4 w-4 text-[var(--color-warning)] mt-0.5 shrink-0" />
             <p className="text-sm text-[var(--color-warning-text)]">
@@ -111,7 +124,8 @@ export default async function PortalPage() {
             <CheckSquare className="h-5 w-5 text-[var(--color-accent)]" />
             Your Tasks
             <span className="text-sm font-normal text-[var(--color-text-muted)]">
-              ({clientTasks.length})
+              ({clientTasks.length}
+              {tasksHasMore ? '+' : ''})
             </span>
           </h2>
           {clientTasks.length === 0 ? (
@@ -121,41 +135,14 @@ export default async function PortalPage() {
               description="Work your CA firm shares with you will appear here."
             />
           ) : (
-            <div className="divide-y divide-[var(--color-border)]">
-              {clientTasks.map((task) => (
-                <Link
-                  key={task.id}
-                  href={`/portal/tasks/${task.id}`}
-                  className={`flex items-center gap-3 py-3.5 first:pt-0 last:pb-0 group ${
-                    task.stage === 'waiting_client' ? 'bg-[var(--color-warning-bg)]/40 -mx-2 px-2 rounded-lg' : ''
-                  }`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-accent)] transition-colors truncate">
-                      {task.title}
-                    </p>
-                    <p className="text-xs text-[var(--color-text-muted)] mt-0.5 flex items-center gap-2 flex-wrap">
-                      {task.period_label && <span>{task.period_label}</span>}
-                      <span className="inline-flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        Due {format(new Date(task.due_date), 'MMM d, yyyy')}
-                      </span>
-                    </p>
-                  </div>
-                  <StageBadge stage={task.stage} viewer="client" />
-                  <ChevronRight className="h-4 w-4 text-[var(--color-text-muted)] shrink-0" />
-                </Link>
-              ))}
-            </div>
+            <PortalTaskList initialTasks={clientTasks} initialHasMore={tasksHasMore} />
           )}
         </Card>
 
-        <DocumentsSection
-          documents={docsWithUrls}
+        <PortalDocumentsSection
+          initialDocuments={docsWithUrls}
+          initialHasMore={docsWithUrls.length === PORTAL_DOCUMENTS_PAGE_SIZE}
           clientId={clientId}
-          viewer="client"
-          canUpload
-          canApprove={false}
         />
       </main>
     </div>

@@ -206,6 +206,7 @@ export async function createTaskAction(formData: FormData): Promise<ActionResult
       message: `You have been assigned: ${task.title}`,
       referenceId: task.id,
       referenceType: 'task',
+      sendEmail: true,
     });
   }
 
@@ -400,6 +401,7 @@ async function changeStageCore(
       message: `${profile.name} submitted "${task.title}" for your review`,
       referenceId: taskId,
       referenceType: 'task',
+      sendEmail: true,
     });
   }
   if (current === 'under_review' && toStage === 'in_progress') {
@@ -412,7 +414,31 @@ async function changeStageCore(
       message: `"${task.title}" was sent back for rework${note ? `: ${note}` : ''}`,
       referenceId: taskId,
       referenceType: 'task',
+      sendEmail: true,
     });
+  }
+  // Client-facing: the client learns their firm needs something from them.
+  // Only fires if the client has a portal login for this task's client.
+  if (toStage === 'waiting_client') {
+    const { data: clientUser } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('client_id', task.client_id)
+      .eq('role', 'client_user')
+      .maybeSingle();
+    if (clientUser) {
+      await notifyUsers({
+        supabase,
+        userIds: [clientUser.id],
+        excludeUserId: userId,
+        type: 'approval_requested',
+        title: 'Your CA firm needs something from you',
+        message: `"${task.title}" is waiting on you${note ? `: ${note}` : ''}`,
+        referenceId: taskId,
+        referenceType: 'task',
+        sendEmail: true,
+      });
+    }
   }
   if (toStage === 'completed') {
     await notifyUsers({
@@ -424,6 +450,7 @@ async function changeStageCore(
       message: `"${task.title}" has been marked as complete`,
       referenceId: taskId,
       referenceType: 'task',
+      sendEmail: true,
     });
     if (current === 'under_review') {
       await notifyUsers({
@@ -435,6 +462,7 @@ async function changeStageCore(
         message: `"${task.title}" was approved by ${profile.name}`,
         referenceId: taskId,
         referenceType: 'task',
+        sendEmail: true,
       });
     }
 
@@ -490,6 +518,7 @@ async function changeStageCore(
             message: `Next occurrence of "${task.title}" is due ${nextDue}`,
             referenceId: nextTask.id,
             referenceType: 'task',
+            sendEmail: true,
           });
         } else if (recurError) {
           console.error('Failed to generate recurring task:', recurError.message);
@@ -603,6 +632,7 @@ export async function updateTaskAssignmentAction(
         message: `You have been assigned: ${oldTask.title}`,
         referenceId: taskId,
         referenceType: 'task',
+        sendEmail: true,
       });
     }
   }

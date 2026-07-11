@@ -1,6 +1,8 @@
 'use server';
 
 import { getAuthProfile } from '@/lib/auth';
+import { sendEmail } from '@/lib/email/resend';
+import { portalInviteEmail } from '@/lib/email/templates';
 import type { ActionResultWithData } from '@/lib/types';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -15,8 +17,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * gate; the app-layer checks below are defense-in-depth, matching the
  * DeadlineTracker convention.
  *
- * Email delivery is a console.log stub until Resend is wired — the invite
- * URL is also returned so a future UI can offer copy-to-clipboard.
+ * Email delivery is via Resend (Phase 11) — the invite URL is also returned
+ * so the UI can still offer copy-to-clipboard as a fallback.
  */
 export async function inviteClientUserAction(
   clientId: string,
@@ -75,12 +77,17 @@ export async function inviteClientUserAction(
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
   const inviteUrl = `${siteUrl}/portal/accept-invite?token=${invitation.token}`;
 
-  // TODO(resend): replace this stub with a real invitation email once Resend
-  // is wired up. Until then the URL is logged server-side and returned to the
-  // caller for manual delivery.
-  console.log(
-    `[client-invite] Portal invitation for ${trimmedEmail} (client "${client.name}"): ${inviteUrl}`
-  );
+  const { data: firmRow } = await supabase.from('firms').select('name').eq('id', profile.firm_id).single();
+
+  await sendEmail({
+    to: trimmedEmail,
+    subject: `You're invited to ${firmRow?.name ?? 'your CA firm'}'s client portal`,
+    html: portalInviteEmail({
+      clientName: client.name,
+      firmName: firmRow?.name ?? 'Your CA firm',
+      inviteUrl,
+    }),
+  });
 
   return { success: true, data: { inviteUrl } };
 }

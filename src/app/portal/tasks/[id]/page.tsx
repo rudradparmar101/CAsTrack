@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { StageBadge } from '@/components/task/stage-badge';
 import { TaskComments } from '@/components/task/task-comments';
 import { DocumentsSection } from '@/components/documents-section';
+import { NotificationBell } from '@/components/notification-bell';
 import { PortalSignOutButton } from '../../sign-out-button';
 import type {
   ClientDocumentWithDetails,
@@ -89,7 +90,10 @@ export default async function PortalTaskPage({ params }: PortalTaskPageProps) {
               <p className="text-xs text-[var(--color-text-muted)]">Client Portal</p>
             </div>
           </div>
-          <PortalSignOutButton />
+          <div className="flex items-center gap-2">
+            <NotificationBell basePath="/portal/tasks" />
+            <PortalSignOutButton />
+          </div>
         </div>
       </header>
 

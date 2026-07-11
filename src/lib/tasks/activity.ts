@@ -1,7 +1,48 @@
 import { createClient } from '@/lib/supabase/server';
+import { sendEmail } from '@/lib/email/resend';
+import { notificationEmail } from '@/lib/email/templates';
 import type { NotificationType, TaskActivityAction } from '@/lib/types';
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+function siteUrl(): string {
+  return process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+}
+
+/** Resolves the recipient's email + role-appropriate task URL, then sends.
+ *  Best-effort: an email failure must never surface to the caller. */
+async function emailForNotification(params: {
+  supabase: Supabase;
+  userId: string;
+  title: string;
+  message: string;
+  referenceId?: string;
+  referenceType?: string;
+}): Promise<void> {
+  const { supabase, userId, title, message, referenceId, referenceType } = params;
+  try {
+    const { data: recipient } = await supabase
+      .from('profiles')
+      .select('email, role')
+      .eq('id', userId)
+      .single();
+    if (!recipient?.email) return;
+
+    let ctaUrl: string | undefined;
+    if (referenceType === 'task' && referenceId) {
+      const base = recipient.role === 'client_user' ? '/portal/tasks' : '/tasks';
+      ctaUrl = `${siteUrl()}${base}/${referenceId}`;
+    }
+
+    await sendEmail({
+      to: recipient.email,
+      subject: title,
+      html: notificationEmail({ title, message, ctaUrl }),
+    });
+  } catch (err) {
+    console.error('Failed to send notification email:', err);
+  }
+}
 
 /**
  * CA-schema replacements for the legacy lib/activity.ts / lib/notifications.ts
@@ -51,8 +92,12 @@ export async function notifyUser(params: {
   message: string;
   referenceId?: string;
   referenceType?: string;
+  /** Phase 11: also email the recipient (assignment / review / rejection /
+   *  completion — the notification types the roadmap calls out; comments and
+   *  routine document uploads deliberately stay in-app-only to avoid noise). */
+  sendEmail?: boolean;
 }): Promise<void> {
-  const { supabase, userId, type, title, message, referenceId, referenceType } = params;
+  const { supabase, userId, type, title, message, referenceId, referenceType, sendEmail: email } = params;
   try {
     const { error } = await supabase.rpc('create_notification', {
       p_user_id: userId,
@@ -66,6 +111,10 @@ export async function notifyUser(params: {
   } catch {
     console.error('Failed to create notification');
   }
+
+  if (email) {
+    await emailForNotification({ supabase, userId, title, message, referenceId, referenceType });
+  }
 }
 
 /** Notify several users, skipping duplicates and the actor themselves. */
@@ -78,6 +127,7 @@ export async function notifyUsers(params: {
   message: string;
   referenceId?: string;
   referenceType?: string;
+  sendEmail?: boolean;
 }): Promise<void> {
   const { userIds, excludeUserId, ...rest } = params;
   const recipients = new Set(

@@ -40,6 +40,11 @@ interface DocumentsSectionProps {
   canApprove: boolean;
   /** Section heading — defaults to "Documents". */
   title?: string;
+  /** Optional "Load more" pagination (Phase 11 portal use) — omitted callers
+   *  render the full `documents` array with no pagination UI, unchanged. */
+  hasMore?: boolean;
+  onLoadMore?: () => void;
+  loadingMore?: boolean;
 }
 
 function formatSize(bytes: number): string {
@@ -56,6 +61,9 @@ export function DocumentsSection({
   canUpload,
   canApprove,
   title = 'Documents',
+  hasMore = false,
+  onLoadMore,
+  loadingMore = false,
 }: DocumentsSectionProps) {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [versionTarget, setVersionTarget] = useState<ClientDocumentWithDetails | null>(null);
@@ -284,6 +292,14 @@ export function DocumentsSection({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {hasMore && onLoadMore && (
+        <div className="flex justify-center pt-4">
+          <Button variant="secondary" size="sm" loading={loadingMore} onClick={onLoadMore}>
+            Load more
+          </Button>
         </div>
       )}
 

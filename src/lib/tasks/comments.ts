@@ -54,7 +54,7 @@ export async function addTaskCommentAction(
   // RLS-scoped read: resolves only if the commenter can see the task.
   const { data: task } = await supabase
     .from('tasks')
-    .select('title, assigned_to, created_by')
+    .select('title, client_id, assigned_to, created_by')
     .eq('id', taskId)
     .single();
 
@@ -70,6 +70,30 @@ export async function addTaskCommentAction(
       referenceId: taskId,
       referenceType: 'task',
     });
+
+    // Staff posting a client-visible comment: the client had no in-app
+    // notification surface before Phase 11 — now they do, so let them know
+    // (a client can never post a comment staff can't already see, so this
+    // path only applies to staff-authored, deliberately-published comments).
+    if (!isClient && visible) {
+      const { data: clientUser } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('client_id', task.client_id)
+        .eq('role', 'client_user')
+        .maybeSingle();
+      if (clientUser) {
+        await notifyUsers({
+          supabase,
+          userIds: [clientUser.id],
+          type: 'comment_added',
+          title: 'New message from your CA firm',
+          message: `${profile.name} commented on "${task.title}"`,
+          referenceId: taskId,
+          referenceType: 'task',
+        });
+      }
+    }
   }
 
   await logTaskActivity({
