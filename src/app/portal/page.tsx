@@ -8,6 +8,7 @@ import { NotificationBell } from '@/components/notification-bell';
 import { PortalSignOutButton } from './sign-out-button';
 import { PortalTaskList } from './portal-task-list';
 import { PortalDocumentsSection } from './portal-documents-section';
+import { ContactCard } from './contact-card';
 import { PORTAL_TASKS_PAGE_SIZE, PORTAL_DOCUMENTS_PAGE_SIZE } from '@/lib/pagination';
 import type { ClientDocumentWithDetails, FirmTask } from '@/lib/types';
 
@@ -105,6 +106,8 @@ export default async function PortalPage() {
             you and exchange documents below.
           </p>
         </div>
+
+        <ContactCard supabase={supabase} clientId={clientId} />
 
         {!!waitingCount && waitingCount > 0 && (
           <div className="rounded-lg bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] px-4 py-3 flex items-start gap-2.5">

@@ -1,6 +1,6 @@
 # Project Context — CA Firm Management SaaS
 
-> **Last updated:** 2026-07-11 (Phase 11 — Communication — in progress, blocked on migration 002 approval)
+> **Last updated:** 2026-07-11 (Phase 11 — Communication — complete)
 > **Repo:** `CA prod 1/` — a local copy of the **DeadlineTracker** codebase (a Next.js + Supabase multi-tenant deadline-tracking SaaS, fully documented in `REFERENCE_ARCHITECTURE.md`) being converted in place into a **Chartered Accountant Firm Management SaaS for the Indian market**, now rebranded **CA Firm Manager**.
 > **Version control:** git, pushed to a GitHub remote (`origin/main`). Working tree is clean and up to date with the remote.
 > **This file is the single source of truth for project state.** Update it at the end of every phase.
@@ -11,7 +11,7 @@
 
 | Question | Answer |
 |---|---|
-| What phase are we in? | **Phase 11 in progress** (communication). RESEND_API_KEY obtained; no verified sending domain yet, so email is built against Resend's shared test sender with every send redirected to `RESEND_TEST_RECIPIENT` (see §5 for the account-email correction found while testing). Delivered so far: (a) channel-agnostic `sendEmail()` (`lib/email/resend.ts` + `templates.ts`) wired into the portal-invite flow (killed the console.log stub) and into `notifyUser`/`notifyUsers` via an opt-in `sendEmail` flag, set at assignment/review/rejection/completion call sites; (b) a reminder scheduler (`lib/compliance/reminders.ts` + `/api/cron/send-reminders`) sending T-7/T-3/T-1 statutory due-date reminders and a 3-day `waiting_client` nag to the client's resolved contact, idempotent via `task_activities` (no new table); (c) client notification surfacing — `NotificationBell` now renders on both portal pages, and staff comments/`waiting_client` transitions now notify the client in-app + by email; (d) portal pagination for `/portal`'s task and document lists. All of the above is build+lint clean and runtime-verified live (see §5). **Blocked:** two remaining sub-items ("checklist_items on portal tasks" and the assigned-contact RPC) need a new migration — `supabase/ca-firm/migrations/002_communication_core.sql` is drafted, NOT applied, NOT folded into schema.sql — waiting on Jay's approval (same ⚠ HUMAN gate as Phase 9) before this phase can close out. |
+| What phase are we in? | **Phase 11 complete** (communication). RESEND_API_KEY obtained; no verified sending domain yet, so email is built against Resend's shared test sender with every send redirected to `RESEND_TEST_RECIPIENT` (see §5 for the account-email correction found while testing — flagged to Jay, not yet resolved). Delivered: (a) channel-agnostic `sendEmail()` (`lib/email/resend.ts` + `templates.ts`) wired into the portal-invite flow (killed the console.log stub) and into `notifyUser`/`notifyUsers` via an opt-in `sendEmail` flag, set at assignment/review/rejection/completion call sites; (b) a reminder scheduler (`lib/compliance/reminders.ts` + `/api/cron/send-reminders`) sending T-7/T-3/T-1 statutory due-date reminders and a 3-day `waiting_client` nag to the client's resolved contact, idempotent via `task_activities` (no new table); (c) client notification surfacing — `NotificationBell` now renders on both portal pages, staff comments/`waiting_client` transitions now notify the client in-app + by email; (d) portal pagination for `/portal`'s task and document lists; (e) migration 002 (`tasks.checklist_items` + `get_client_assigned_contact()` RPC) — a real architectural finding surfaced mid-phase (Phase 10's no-migration event-sourcing trick doesn't work for client-visible state, since `task_activities` is staff-only readable) — approved and applied by Jay, folded into schema.sql; per-task checklist (template-copied, staff-toggleable, client-visible) and a "Your contact at the firm" portal card both built on top of it. Everything build+lint clean and runtime-verified live end-to-end (real accounts, real UI clicks — see §5). Next up per the roadmap: the PILOT CHECKPOINT (⚠ HUMAN-only — Jay onboards a real firm, no code) before Phase 12 (client billing & receivables). |
 | Does it build? | ✅ `npm run build` clean (incl. TypeScript). ✅ `npm run lint` — **zero errors, zero warnings** (unchanged baseline since Phase 8). |
 | Does it run? | ✅ **Runtime-verified against a live Supabase project** (`fwmmdyebvzncpezdwnxm.supabase.co`). Every major surface has now been scripted and exercised live: the full stage-machine transition matrix, comments/documents isolation, the **client portal end-to-end**, **recurrence spawning**, **per-role RLS isolation**, the rebuilt dashboard (Ph8), and now (Ph10) **calendar-driven statutory generation** — real cron-route calls against a seeded demo firm, idempotent on rerun, applicability spot-checked across 5 client archetypes (regular/QRMP/composition GST, audit-applicable pvt_ltd, no-registration individual). |
 | What works? | Auth + 3 onboarding paths, Clients (CRUD/addresses/persons/**registrations**/portal invites), Documents (upload/versions/approve-reject, staff + portal), Tasks (list/detail/stage machine/assignment/comments/documents/activity/**filing outcomes**), client portal (runtime-verified end-to-end), Team (departments + membership), Templates (department-scoped), Settings (firm rename), Dashboard (partner/employee split, unified FirmTask model), **Compliance (Ph10): registrations editor, calendar-driven statutory generation (manual + cron), filing-status grid** — all working against the real schema and RLS-proven for the roles exercised. Full teal-accent light/dark theme across every page. |
@@ -69,8 +69,12 @@ CA prod 1/
 │   │   ├── (auth)/                    # login, signup (+actions), onboarding (+actions)      [PORTED, Ph2]
 │   │   ├── auth/callback/route.ts     # OAuth/email-confirm callback → provisioning          [PORTED, Ph2]
 │   │   ├── portal/                    # CLIENT PORTAL (client_user role only)
-│   │   │   ├── page.tsx               # Home: task list + waiting-on-you banner + documents  [Ph3+Ph4]
-│   │   │   ├── tasks/[id]/page.tsx    # Task view: stage, comments, task documents           [NEW Ph4]
+│   │   │   ├── page.tsx               # Home: contact card, waiting-on-you banner, paginated tasks/docs [Ph3+Ph4+Ph11]
+│   │   │   ├── tasks/[id]/page.tsx    # Task view: stage, checklist, comments, task documents [Ph4, +checklist Ph11]
+│   │   │   ├── actions.ts             # ★ Ph11 NEW — fetchMorePortalTasksAction/fetchMorePortalDocumentsAction
+│   │   │   ├── contact-card.tsx       # ★ Ph11 NEW — "Your contact at the firm" via get_client_assigned_contact() RPC
+│   │   │   ├── portal-task-list.tsx   # ★ Ph11 NEW — client component, "Load more" task pagination
+│   │   │   ├── portal-documents-section.tsx  # ★ Ph11 NEW — client component, "Load more" document pagination
 │   │   │   ├── accept-invite/         # Public invite-accept flow (+actions)                 [Ph2]
 │   │   │   └── sign-out-button.tsx
 │   │   └── (dashboard)/               # STAFF SURFACE (partner/employee)
@@ -80,7 +84,7 @@ CA prod 1/
 │   │       │   ├── page.tsx           # Server list page — awaits searchParams, builds RLS-scoped query
 │   │       │   ├── tasks-page-client.tsx  # Toolbar (search/tabs/filters/sort → URL), table, create modal
 │   │       │   ├── filters.ts         # TaskFilters model: whitelist parser, URL serializer, applyTaskFilters()
-│   │       │   ├── actions.ts         # create/update/changeStage/assign/visibility/delete/fetchMore
+│   │       │   ├── actions.ts         # create/update/changeStage/assign/visibility/delete/fetchMore/toggleChecklistItem (Ph11)
 │   │       │   │                      #   + legacy-compat markTaskCompleteAction/deleteTaskAction
 │   │       │   ├── loading.tsx        # skeleton
 │   │       │   └── [id]/
@@ -99,10 +103,12 @@ CA prod 1/
 │   │       │                          #   actions.ts (partner-only generateStatutoryTasksAction)
 │   │       └── notifications-actions.ts
 │   │   ├── api/cron/generate-statutory-tasks/route.ts  # ★ Ph10 NEW — service-role, CRON_SECRET-gated, loops every firm
+│   │   ├── api/cron/send-reminders/route.ts  # ★ Ph11 NEW — service-role, CRON_SECRET-gated, statutory + waiting_client reminders
 │   ├── components/
 │   │   ├── task/                      # ★ Phase 4 composable task components
 │   │   │   ├── stage-badge.tsx        # Stage chip; viewer='client' renders portal wording
-│   │   │   ├── task-form.tsx          # Create (full) / edit (metadata-only) form, template picker
+│   │   │   ├── task-form.tsx          # Create (full) / edit (metadata-only) form, template picker (+template_id, Ph11)
+│   │   │   ├── task-checklist.tsx     # ★ Ph11 NEW — per-task checklist: interactive for staff, read-only for clients
 │   │   │   ├── task-header.tsx        # Title/badges/description, edit modal, visibility toggle, partner delete
 │   │   │   ├── task-stage-panel.tsx   # STAGE MACHINE UI: valid transitions, note, partner force, stage history
 │   │   │   ├── task-assignment.tsx    # Assignee/reviewer/department (editable iff tasks.assign, else read-only)
@@ -111,14 +117,16 @@ CA prod 1/
 │   │   │   ├── task-comments.tsx      # Shared staff+portal thread; visibility checkbox for staff
 │   │   │   ├── task-activity-feed.tsx # Chronological audit from task_activities (server-renderable)
 │   │   │   └── task-documents.tsx     # DocumentsSection wrapper + "attach existing document" modal
-│   │   ├── documents-section.tsx      # SHARED staff+portal documents UI; Ph4: optional taskId prop, title prop
+│   │   ├── documents-section.tsx      # SHARED staff+portal documents UI; Ph4: optional taskId prop, title prop;
+│   │   │                              #   Ph11: optional hasMore/onLoadMore/loadingMore pagination props
 │   │   ├── client-form.tsx            # Ph3 client form (addresses/persons as JSON sub-forms); Ph10: + registrations
 │   │   │                              #   sub-form + audit-applicability fields
 │   │   ├── task-card.tsx              # LEGACY type, still kept — only dashboard pages import it; works against
 │   │   │                              #   the real schema (Task type's fields fixed in Ph5) but not yet unified onto FirmTask
 │   │   ├── dashboard-shell.tsx / sidebar.tsx / topbar.tsx   # Shell; sidebar role-fixed Ph4; theme toggle moved
 │   │   │                              #   sidebar→topbar in Ph6 (useSyncExternalStore for hydration-safe icon)
-│   │   ├── notification-bell.tsx      # Polls notifications; type→icon map (Ph4 added document_uploaded); Ph6 retheme only
+│   │   ├── notification-bell.tsx      # Polls notifications; type→icon map (Ph4 added document_uploaded); Ph6 retheme;
+│   │   │                              #   Ph11: basePath prop so portal notifications link to /portal/tasks
 │   │   ├── priority-badge.tsx         # ★ Ph6: rewired to token families (low→muted, medium→info, high→warning,
 │   │   │                              #   critical→danger) — was raw Tailwind colors with no dark-mode handling at all
 │   │   ├── theme-provider.tsx         # ★ Ph6: rewritten with a lazy useState initializer — was 2 pre-existing lint errors
@@ -129,8 +137,15 @@ CA prod 1/
 │       ├── documents/actions.ts       # SHARED document actions (staff+portal+tasks): upload (task-aware),
 │       │                              #   version, approve, reject, attachDocumentToTaskAction
 │       ├── tasks/
-│       │   ├── comments.ts            # SHARED comment actions ('use server'): add/update/delete — staff + portal
-│       │   └── activity.ts            # logTaskActivity() + notifyUser(s)() via create_notification RPC
+│       │   ├── comments.ts            # SHARED comment actions ('use server'): add/update/delete — staff + portal;
+│       │   │                          #   Ph11: staff client-visible comments now also notify the client
+│       │   └── activity.ts            # logTaskActivity() + notifyUser(s)() via create_notification RPC;
+│       │                              #   Ph11: notifyUser(s) gained an opt-in sendEmail flag
+│       ├── email/                     # ★ Ph11 NEW
+│       │   ├── resend.ts              #   sendEmail() — channel-agnostic, RESEND_TEST_RECIPIENT redirect until a
+│       │   │                          #   verified domain exists
+│       │   └── templates.ts           #   inline-styled HTML templates: notification, portal invite, statutory
+│       │                              #   reminder, waiting_client nag
 │       ├── supabase/                  # client.ts / server.ts / admin.ts (service-role) / middleware.ts
 │       ├── types.ts                   # CA types (FirmTask*, Department, TaskStage, …) + LEGACY transitional aliases;
 │       │                              #   Ph5: Team/TeamMember/TeamWithDetails/TeamMemberWithProfile → Department/
@@ -138,12 +153,14 @@ CA prod 1/
 │       ├── ca-options.ts              # Business/address types + GSTIN/PAN/TAN/CIN/DIN/PIN regexes
 │       ├── task-options.ts            # ★ Stage machine map (mirrors DB trigger), stage/transition labels,
 │       │                              #   priority/recurrence options, activity-feed label map
-│       ├── pagination.ts              # TASKS_PAGE_SIZE=24, CLIENTS_PAGE_SIZE=20, MEMBERS_PAGE_SIZE=20
+│       ├── pagination.ts              # TASKS/CLIENTS/MEMBERS_PAGE_SIZE (Ph4/5) + PORTAL_TASKS/DOCUMENTS_PAGE_SIZE (Ph11, =20)
 │       ├── recurrence.ts              # getNextDueDate() — reused by Ph4 recurrence spawning
-│       └── compliance/                # ★ Ph10 NEW
-│           ├── period.ts              #   FY-aware period_key/due_date computation from due_day_rule
-│           └── generation.ts          #   generateStatutoryTasksForFirm() + isApplicable() (shared by the partner
-│                                       #   action and the cron route) + getFirmPartnerId()
+│       └── compliance/
+│           ├── period.ts              # ★ Ph10 — FY-aware period_key/due_date computation from due_day_rule
+│           ├── generation.ts          # ★ Ph10 — generateStatutoryTasksForFirm() + isApplicable() (shared by the
+│           │                          #   partner action and the cron route) + getFirmPartnerId()
+│           └── reminders.ts           # ★ Ph11 NEW — sendStatutoryReminders()/sendWaitingClientNags(), idempotent
+│                                       #   via task_activities (reminder_sent, tier-tagged)
 ```
 
 **"PORTED" vs "LEGACY":** ported code uses `firm_id`, `getAuthContext()`, and the new role model. Legacy code still queries `organization_id`, `teams`, and `role IN ('admin','member')` — it compiles (via deliberate transitional aliases in `lib/types.ts`) but **will not work against the new schema** until ported. After Phase 5, the only surface still on the legacy `Task`/`TaskWithDetails` types is the dashboard + `task-card.tsx` — everything else (`/team`, `/templates`, `/settings`) is fully ported.
@@ -309,7 +326,7 @@ The Tier-1 feature-gap items (§10): applicability-driven statutory task generat
 - **Known scope limits** (see §0 risks 4-6): one task per (client, compliance_type, period) — not per-registration, so a client with 2 GSTINs gets one consolidated GST task; `advance_tax_quarterly` has no computable due date yet; `CRON_SECRET` is a local placeholder pending real deployment.
 - **Verified:** `scripts/verify/06-compliance-core.mjs` (committed, 24/24) seeds a demo firm + 20 clients across 5 applicability archetypes directly via the admin client, calls the real `/api/cron/...` route twice (idempotency), and spot-checks per-client-archetype outcomes (regular vs. QRMP vs. composition GST scoping, TAN-gated TDS types, the audit conflict-pair fix, business-type-gated ROC filings, the universal no-registration ITR case). A throwaway (uncommitted) Playwright pass additionally confirmed `/compliance`, client-detail, and task-detail all render correctly.
 
-### 4.9 Communication (Phase 11, in progress)
+### 4.9 Communication (Phase 11)
 
 - **Email** (`lib/email/resend.ts` + `lib/email/templates.ts`): a single `sendEmail({to, subject, html})` — the one place a future WhatsApp/SMS channel would sit alongside (per the roadmap's "channel-agnostic sender" decision). Fire-and-forget: errors are logged, never thrown. `RESEND_TEST_RECIPIENT` (`.env.local`) redirects every send there until a sending domain is verified (see §0 risk item below); `templates.ts` has one shared inline-styled layout plus four callers (generic notification, portal invite, statutory reminder, waiting_client nag).
 - **Portal invites** (`clients/portal-actions.ts`): the `console.log` stub is gone — `inviteClientUserAction` now calls `sendEmail()` with the invite link; the URL is still returned to the caller for a copy-to-clipboard fallback.
@@ -319,7 +336,9 @@ The Tier-1 feature-gap items (§10): applicability-driven statutory task generat
 - **Bug found + fixed while testing:** `differenceInCalendarDays(new Date(task.statutory_due_date), referenceDate)` silently shifted every T-N match by a day for any server timezone east of UTC — `new Date('YYYY-MM-DD')` parses as UTC midnight, but `differenceInCalendarDays` buckets by LOCAL calendar day. Fixed with a `parseDateOnly()` helper that anchors to local midnight (`` `${dateStr}T00:00:00` ``) — the same fix already used elsewhere in this codebase for due-date math (e.g. `task-header.tsx`'s `+ 'T23:59:59'`). Caught by an end-to-end runtime test, not by review.
 - **Portal pagination:** `/portal`'s task list (`portal-task-list.tsx`) and client-wide document list (`portal-documents-section.tsx`) are now "Load more" paginated (`fetchMorePortalTasksAction`/`fetchMorePortalDocumentsAction` in `app/portal/actions.ts`; `PORTAL_TASKS_PAGE_SIZE`/`PORTAL_DOCUMENTS_PAGE_SIZE` = 20 in `lib/pagination.ts`). The "N tasks are waiting on you" banner uses an independent `count`-only query (`stage = 'waiting_client'`) so it stays accurate once the task list is paginated and a waiting task could fall past page 1. `DocumentsSection` gained optional `hasMore`/`onLoadMore`/`loadingMore` props (backward-compatible — omitted by every other caller). `/portal/tasks/[id]`'s task-scoped document list is intentionally left unpaginated (naturally small, bounded to one task).
 - **`NotificationBell`** gained a `basePath` prop (default `/tasks`) so task-reference notifications link correctly from the portal (`/portal/tasks`); rendered on both `/portal` and `/portal/tasks/[id]`.
-- **Blocked on migration approval** — `supabase/ca-firm/migrations/002_communication_core.sql` (drafted, not applied, not folded into schema.sql): (a) `tasks.checklist_items JSONB` — needed so "surface template checklist_items on portal tasks as per-item received/pending" is actually client-readable (an event-sourced `task_activities` approach, Phase 10's no-migration trick, doesn't work here because that table is staff-only readable by RLS); (b) `get_client_assigned_contact(client_id)` SECURITY DEFINER RPC — lets the portal show "who is my contact" without widening the `profiles` SELECT policy (explicitly ruled out by the roadmap). Neither the checklist-toggle UI nor the assigned-contact portal display is built yet — both wait on this migration.
+- **Migration 002** (`supabase/ca-firm/migrations/002_communication_core.sql`) — an architectural finding surfaced mid-phase: Phase 10's no-migration event-sourcing trick (state derived from `task_activities`) doesn't work for client-visible state, because that table is staff-only readable by RLS. Approved by Jay, applied via the Supabase SQL editor, read-only verified, folded into `schema.sql`. Adds (a) `tasks.checklist_items JSONB DEFAULT '[]'` — no new RLS needed, already covered by the existing tasks SELECT/UPDATE policies; (b) `get_client_assigned_contact(client_id)` SECURITY DEFINER RPC — resolves to the assignee of the client's most recently touched visible, non-archived task, falling back to the firm's earliest active partner; only the client_user bound to that client_id gets a result (verified live: a client cannot resolve a different client's contact).
+- **Per-task checklist** (`components/task/task-checklist.tsx`): a template's `checklist_items` are copied onto the task at creation (`createTaskAction`, fresh item ids, all unreceived) when a template was selected (`task-form.tsx` now submits `template_id` as a hidden field). Staff toggle items via `toggleTaskChecklistItemAction` (RLS-gated read-modify-write on the array, logs `checklist_item_toggled`); the client sees the same list read-only (checked + strikethrough = received) — rendered on both `/tasks/[id]` and `/portal/tasks/[id]`. Renders nothing when the checklist is empty (not every task comes from a template).
+- **"Your contact at the firm"** (`app/portal/contact-card.tsx`) on `/portal`, calling `get_client_assigned_contact()` — never a direct `profiles` read.
 
 ---
 
@@ -337,7 +356,7 @@ The Tier-1 feature-gap items (§10): applicability-driven statutory task generat
 | **8 — Type unification + deletions** | 2026-07-10 | Dashboard rebuilt onto `FirmTaskWithRefs` via a new shared `TaskSummaryCard`; deleted `components/task-card.tsx`, `markTaskCompleteAction`, orphaned `lib/activity.ts`/`lib/notifications.ts`; removed the `Organization`/`'admin'\|'member'` legacy aliases and the deprecated `organization` field on `getAuthContext()`; folded `templates/*` onto `FirmTaskTemplate`; deleted every dead legacy type in `lib/types.ts`; archived legacy DeadlineTracker `supabase/` artifacts to `supabase/_legacy-deadlinetracker/` with a README; fixed the last 2 `notification-bell.tsx` lint errors + 4 unused-var warnings | ✅ Build clean; lint **fully clean** (zero errors, zero warnings — new baseline); Playwright-verified dashboard for partner + employee against a live Supabase project; pushed to `origin/main` |
 | **9 — CA-core schema extension** | 2026-07-10 | Migration 001 (`supabase/ca-firm/migrations/001_ca_compliance_core.sql`) + folded into `schema.sql`: `client_registrations` (multi-GSTIN/TAN/PF/ESI/PT), `is_audit_applicable`/`audit_type` on `clients`, platform-wide `compliance_types` catalog (16 seed rows), and `tasks.financial_year`/`period_type`/`period_key`/`source`/`category`/`compliance_type_id` + the `uq_statutory_task_per_period` partial unique index; RLS written for both new tables at creation time; `tasks/actions.ts` completion-chain guard now skips `source='statutory'` | ✅ Build + lint clean; migration applied to the live Supabase project by Jay via the SQL Editor and read-only-verified (seed rows, new columns, unchanged defaults on existing tasks) |
 | **10 — Compliance core build** | 2026-07-11 | Registrations editor (client form/detail); idempotent calendar-driven generation engine (`lib/compliance/period.ts` + `generation.ts`) + partner "Generate now" action + `/api/cron/generate-statutory-tasks` route (service-role, CRON_SECRET); filing-status grid at `/compliance` (reports.view-gated); filing-outcome (ARN/filed date) capture on statutory-task completion via `task_activities`; fixed a real middleware bug (`/api/*` was being redirected to `/login`, which would have made the cron route unreachable) and a real applicability-engine gap (itr_non_audit/itr_audit conflict pair); new committed `scripts/verify/06-compliance-core.mjs` (24/24) | ✅ Build + lint clean; seed script green against the live Supabase project (idempotency + per-archetype applicability verified); Playwright visual spot-check of all 3 new/changed pages |
-| **11 — Communication** | 2026-07-11 (in progress) | Resend wiring (invites + assignment/review/rejection/completion notification emails), reminder scheduler (T-7/T-3/T-1 statutory + waiting_client nag, `/api/cron/send-reminders`), client notification surfacing (portal `NotificationBell`, client-visible comments + waiting_client now notify the client), portal pagination (`/portal` tasks + documents). Found + fixed a real date-math bug in the reminder engine (bare `new Date('YYYY-MM-DD')` parsed as UTC midnight vs. `differenceInCalendarDays`'s local-day bucketing — shifted tier matches by a day east of UTC). Also found: the Resend account is registered under a different email than Jay is normally addressed by in this project — corrected `RESEND_TEST_RECIPIENT` after a live 403 confirmed it. | 🔶 Build+lint clean; email sending + both reminder types + idempotency runtime-verified live against the dev server and Supabase project. **Blocked** on migration 002 approval (checklist_items column + assigned-contact RPC) — see §0 and docs/ROADMAP.md. |
+| **11 — Communication** | 2026-07-11 | Resend wiring (invites + assignment/review/rejection/completion notification emails), reminder scheduler (T-7/T-3/T-1 statutory + waiting_client nag, `/api/cron/send-reminders`), client notification surfacing (portal `NotificationBell`, client-visible comments + waiting_client now notify the client), portal pagination (`/portal` tasks + documents), migration 002 (`tasks.checklist_items` + `get_client_assigned_contact()` RPC — a real architectural finding, approved and applied by Jay mid-phase) + the per-task checklist UI and portal "Your contact at the firm" card built on top of it. Found + fixed a real date-math bug in the reminder engine (bare `new Date('YYYY-MM-DD')` parsed as UTC midnight vs. `differenceInCalendarDays`'s local-day bucketing — shifted tier matches by a day east of UTC). Also found: the Resend account is registered under a different email than Jay is normally addressed by in this project — corrected `RESEND_TEST_RECIPIENT` after a live 403 confirmed it; flagged, not yet resolved by Jay. | ✅ Build+lint clean throughout; every new surface runtime-verified live against the dev server and Supabase project — email sending, both reminder types + idempotency, checklist RLS visibility + template-copy + UI toggle (via real accounts and real clicks, not just data-level checks), assigned-contact resolution + cross-client isolation |
 | 12+ | — | See docs/ROADMAP.md | ⏳ Not started |
 
 **Module status (done vs left):**
@@ -356,7 +375,7 @@ The Tier-1 feature-gap items (§10): applicability-driven statutory task generat
 | Notifications helpers (`lib/notifications.ts`, `lib/activity.ts`) | ❌ Still ORPHANED — nothing imports them; delete when the dashboard is unified onto FirmTask |
 | Super-admin surface (`/admin`) | ❌ Not started (`isSuperAdmin` flag ready in getAuthContext) |
 | Billing / payment webhooks / plan enforcement | ❌ Not started (schema + DB helpers ready) |
-| Email (Resend) | 🔶 **Built (Ph11, in progress)** — invites + notification emails + reminders wired and live-verified; running on Resend's test sender (`RESEND_TEST_RECIPIENT` redirect) pending a verified domain — see §0 |
+| Email (Resend) | ✅ **Built (Ph11)** — invites + notification emails + reminders wired and live-verified; running on Resend's test sender (`RESEND_TEST_RECIPIENT` redirect) pending a verified domain — tracked under PILOT CHECKPOINT in docs/ROADMAP.md |
 | Tests / RLS verification | ✅ **Ph7** — committed `scripts/verify/*.mjs` suite (not a CI-wired test framework, but scripted + repeatable, run by hand): full stage matrix, comments/documents, portal e2e, recurrence, and a per-role RLS smoke test (E1/E2/client-A via real anon-key sign-ins). **Ph10** added `06-compliance-core.mjs` (generation engine idempotency + applicability) |
 | Visual design system | ✅ Built (Ph6) — teal accent, full light/dark, Plus Jakarta Sans |
 | Compliance core (registrations, generation, filing grid) | ✅ **Built (Ph10)** — registrations editor, calendar-driven statutory generation (manual + cron), filing-status grid, filing-outcome capture. No period-selector/history view (current period only); no per-registration task granularity (§0 risk 4) |
@@ -455,6 +474,11 @@ Phase list: 7 verify · 8 unify/delete · 9 schema · 10 compliance core · 11 c
 | Filing outcomes (ARN/filed date) logged to `task_activities`, not new `tasks` columns | Phase 10 was scoped with no migration gate; the existing generic activity-feed rendering already displays arbitrary key/value pairs, so no schema change or new UI rendering logic was needed | 10 |
 | `itr_non_audit_annual`/`itr_audit_annual` conflict resolved by a hardcoded `code === '...'` check in `isApplicable()`, not a schema-level "excludes" column | Exactly one conflict pair exists in the current 16-row catalog; a general negation mechanism would be speculative schema complexity for a problem with one instance so far | 10 |
 | Filing-status grid shows only the CURRENT period per compliance type, no period selector/history | Matches the stated primary use case ("the partner's 18th evening screen") without building a bigger feature than asked; a historical view is a reasonable, clearly-scoped follow-up | 10 |
+| Reminder + notification-email idempotency logged to `task_activities` (tier-tagged `new_value`, checked via `.contains()`), not a new table | Same no-migration trick as Phase 10's filing outcomes; cron-driven, so staff-only readability of `task_activities` doesn't matter here (service role bypasses RLS entirely) | 11 |
+| `notifyUser`/`notifyUsers` gained an opt-in `sendEmail` flag rather than deriving "should email" from `NotificationType` | Explicit per-call-site control matches the roadmap's precise scope (assignment/review/rejection/completion only) without tying email delivery to a type identity that's also reused for in-app-only events (e.g. document approve/reject reuse `task_approved`/`task_rejected`) | 11 |
+| `tasks.checklist_items` (new column) instead of extending the `task_activities` event-sourcing trick to cover checklists | `task_activities` is staff-only readable by RLS ("clients get their curated view from tasks/documents") — client-visible state genuinely needs a column already covered by the existing tasks SELECT/UPDATE policies. A real architectural finding, not a preference — flagged and gated on Jay's approval before applying | 11 |
+| `get_client_assigned_contact()` SECURITY DEFINER RPC instead of widening the `profiles` SELECT policy | Explicitly ruled out per the roadmap: client_users must never be able to enumerate firm staff. The RPC checks `auth.uid()` is the client_user bound to the requested client_id before returning anything | 11 |
+| Client contact for reminders resolved from `client_authorized_persons`/`clients.email`, independent of portal login | Statutory reminders must reach the firm's real-world contact even for clients without portal access yet; the assigned-contact RPC (portal-only "who is my contact" display) is a separate, unrelated concern | 11 |
 
 ---
 

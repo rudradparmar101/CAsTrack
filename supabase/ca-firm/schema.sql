@@ -382,6 +382,12 @@ CREATE TABLE public.tasks (
   assigned_to        UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   reviewer_id        UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   visible_to_client  BOOLEAN NOT NULL DEFAULT true, -- curated portal: flip off for internal tasks
+  -- Per-task copy of the originating template's checklist_items (Phase 11) —
+  -- same {id, text, completed} shape as task_templates.checklist_items.
+  -- Copied once at task creation (not synced afterward); staff toggle
+  -- 'completed' (rendered as received/pending); covered by the existing
+  -- tasks SELECT/UPDATE RLS policies, no new policy needed.
+  checklist_items    JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_by         UUID NOT NULL REFERENCES public.profiles(id),
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -712,6 +718,53 @@ BEGIN
   VALUES (v_target_firm, p_user_id, p_type, p_title, p_message, p_reference_id, p_reference_type);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- Portal "who is my contact" (Phase 11) — a narrow SECURITY DEFINER RPC
+-- instead of a widened profiles SELECT policy (which would let clients
+-- enumerate all firm staff). Only the client_user bound to p_client_id gets
+-- a result; resolves to the assignee of their most recently touched
+-- visible, non-archived task, falling back to the firm's earliest active
+-- partner.
+CREATE OR REPLACE FUNCTION public.get_client_assigned_contact(p_client_id UUID)
+RETURNS TABLE(name TEXT, email TEXT, phone TEXT, designation TEXT)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_contact_id UUID;
+  v_firm_id UUID;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role = 'client_user' AND client_id = p_client_id
+  ) THEN
+    RETURN;
+  END IF;
+
+  SELECT t.assigned_to INTO v_contact_id
+  FROM public.tasks t
+  WHERE t.client_id = p_client_id
+    AND t.visible_to_client = true
+    AND t.stage <> 'archived'
+    AND t.assigned_to IS NOT NULL
+  ORDER BY t.updated_at DESC
+  LIMIT 1;
+
+  IF v_contact_id IS NULL THEN
+    SELECT c.firm_id INTO v_firm_id FROM public.clients c WHERE c.id = p_client_id;
+    SELECT p.id INTO v_contact_id
+    FROM public.profiles p
+    WHERE p.firm_id = v_firm_id AND p.role = 'partner' AND p.is_active = true
+    ORDER BY p.created_at ASC
+    LIMIT 1;
+  END IF;
+
+  RETURN QUERY
+    SELECT p.name, p.email, p.phone, p.designation
+    FROM public.profiles p
+    WHERE p.id = v_contact_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_client_assigned_contact(UUID) TO authenticated;
 
 -- Same-firm membership check used by user_permissions policies.
 CREATE OR REPLACE FUNCTION public.profile_in_my_firm(p_user_id UUID, p_role TEXT DEFAULT NULL)

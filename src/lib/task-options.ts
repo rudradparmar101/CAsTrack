@@ -122,4 +122,6 @@ export const ACTIVITY_LABELS: Record<string, string> = {
   document_rejected: 'rejected a document',
   recurring_generated: 'generated this task from a recurrence',
   filing_outcome_recorded: 'recorded the filing outcome',
+  reminder_sent: 'sent a reminder to the client',
+  checklist_item_toggled: 'updated a checklist item',
 };

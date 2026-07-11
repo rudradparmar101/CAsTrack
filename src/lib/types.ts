@@ -273,7 +273,8 @@ export type TaskActivityAction =
   | 'document_rejected'
   | 'recurring_generated'
   | 'filing_outcome_recorded'
-  | 'reminder_sent';
+  | 'reminder_sent'
+  | 'checklist_item_toggled';
 
 export interface Department {
   id: string;
@@ -312,6 +313,9 @@ export interface FirmTask {
   assigned_to: string | null;
   reviewer_id: string | null;
   visible_to_client: boolean;
+  /** Per-task copy of the originating template's checklist (Phase 11) —
+   *  copied once at creation, toggled by staff, visible to the client. */
+  checklist_items: ChecklistItem[];
   created_by: string;
   created_at: string;
   updated_at: string;

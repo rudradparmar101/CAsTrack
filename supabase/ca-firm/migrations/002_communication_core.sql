@@ -1,9 +1,10 @@
 -- ============================================================================
 -- Migration 002 — Communication core (Phase 11)
 -- Target: the LIVE CA Firm Manager Supabase project (fwmmdyebvzncpezdwnxm).
--- This is the DELTA to apply to the running database. NOT yet folded into
--- schema.sql — that happens after this is reviewed/approved and applied
--- (same order as migration 001 / Phase 9).
+-- Applied 2026-07-11 by Jay via the Supabase SQL editor; read-only verified
+-- immediately after (checklist_items exists/writable, get_client_assigned_
+-- contact() callable) and folded into schema.sql — this file is kept as the
+-- historical delta record, same convention as migration 001.
 --
 -- Adds two independent, additive pieces needed by Phase 11's checklist that
 -- the rest of the phase (Resend wiring, reminder cron, client notification

@@ -42,6 +42,7 @@ export function TaskForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [visibleToClient, setVisibleToClient] = useState(task ? task.visible_to_client : true);
+  const [templateId, setTemplateId] = useState('');
   const [formValues, setFormValues] = useState({
     title: task?.title || '',
     description: task?.description || '',
@@ -70,8 +71,9 @@ export function TaskForm({
     setLoading(false);
   };
 
-  const handleTemplateSelect = (templateId: string) => {
-    const template = templates?.find((t) => t.id === templateId);
+  const handleTemplateSelect = (selectedTemplateId: string) => {
+    setTemplateId(selectedTemplateId);
+    const template = templates?.find((t) => t.id === selectedTemplateId);
     if (!template) return;
     setFormValues((v) => ({
       ...v,
@@ -98,13 +100,16 @@ export function TaskForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {!isEdit && templates && templates.length > 0 && (
-        <Select
-          label="Create from Template"
-          options={templates.map((t) => ({ value: t.id, label: t.title }))}
-          placeholder="Select a template (optional)"
-          defaultValue=""
-          onChange={(e) => handleTemplateSelect(e.target.value)}
-        />
+        <>
+          <input type="hidden" name="template_id" value={templateId} />
+          <Select
+            label="Create from Template"
+            options={templates.map((t) => ({ value: t.id, label: t.title }))}
+            placeholder="Select a template (optional)"
+            defaultValue=""
+            onChange={(e) => handleTemplateSelect(e.target.value)}
+          />
+        </>
       )}
 
       <Input

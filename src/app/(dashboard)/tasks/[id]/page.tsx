@@ -6,6 +6,7 @@ import { TaskStagePanel } from '@/components/task/task-stage-panel';
 import { TaskAssignment } from '@/components/task/task-assignment';
 import { TaskMetadata } from '@/components/task/task-metadata';
 import { TaskClientCard } from '@/components/task/task-client-card';
+import { TaskChecklist } from '@/components/task/task-checklist';
 import { TaskComments } from '@/components/task/task-comments';
 import { TaskActivityFeed } from '@/components/task/task-activity-feed';
 import { TaskDocuments } from '@/components/task/task-documents';
@@ -157,6 +158,12 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
       <div className="grid gap-6 lg:grid-cols-3 items-start">
         {/* Main column */}
         <div className="lg:col-span-2 space-y-6">
+          <TaskChecklist
+            taskId={typedTask.id}
+            items={typedTask.checklist_items}
+            viewer="staff"
+            canToggle={canUpdate}
+          />
           <TaskDocuments
             taskId={typedTask.id}
             clientId={typedTask.client_id}

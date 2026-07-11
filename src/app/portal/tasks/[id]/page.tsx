@@ -7,6 +7,7 @@ import { getAuthContext } from '@/lib/auth';
 import { Card } from '@/components/ui/card';
 import { StageBadge } from '@/components/task/stage-badge';
 import { TaskComments } from '@/components/task/task-comments';
+import { TaskChecklist } from '@/components/task/task-checklist';
 import { DocumentsSection } from '@/components/documents-section';
 import { NotificationBell } from '@/components/notification-bell';
 import { PortalSignOutButton } from '../../sign-out-button';
@@ -134,6 +135,8 @@ export default async function PortalTaskPage({ params }: PortalTaskPageProps) {
             </div>
           )}
         </Card>
+
+        <TaskChecklist taskId={typedTask.id} items={typedTask.checklist_items} viewer="client" />
 
         <DocumentsSection
           documents={docsWithUrls}

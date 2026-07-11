@@ -17,6 +17,7 @@ import type { TaskFilters } from './filters';
 import type {
   ActionResult,
   ActionResultWithData,
+  ChecklistItem,
   FirmTaskWithRefs,
   Profile,
   TaskStage,
@@ -164,6 +165,24 @@ export async function createTaskAction(formData: FormData): Promise<ActionResult
   const assignedTo = opt(formData.get('assigned_to'));
   const reviewerId = opt(formData.get('reviewer_id'));
 
+  // Template checklist (Phase 11): a fresh copy, not a reference — new item
+  // ids, all unreceived. RLS-scoped read: resolves only if the template is
+  // visible (staff-only table, same firm).
+  const templateId = opt(formData.get('template_id'));
+  let checklistItems: ChecklistItem[] = [];
+  if (templateId) {
+    const { data: template } = await supabase
+      .from('task_templates')
+      .select('checklist_items')
+      .eq('id', templateId)
+      .single();
+    checklistItems = ((template?.checklist_items as ChecklistItem[]) || []).map((item) => ({
+      id: crypto.randomUUID(),
+      text: item.text,
+      completed: false,
+    }));
+  }
+
   // Stage is deliberately not set: it defaults to 'created', and the DB
   // trigger auto-advances to 'assigned' when assigned_to is present.
   const { data: task, error } = await supabase
@@ -175,6 +194,7 @@ export async function createTaskAction(formData: FormData): Promise<ActionResult
       department_id: departmentId,
       assigned_to: assignedTo,
       reviewer_id: reviewerId,
+      checklist_items: checklistItems,
       created_by: userId,
     })
     .select('id, title')
@@ -684,6 +704,55 @@ export async function toggleTaskVisibilityAction(
     action: 'visibility_changed',
     oldValue: { visible_to_client: !visible },
     newValue: { visible_to_client: visible },
+  });
+
+  revalidateTaskViews(taskId);
+  return { success: true };
+}
+
+// ---- checklist (Phase 11) ---------------------------------------------------
+
+export async function toggleTaskChecklistItemAction(
+  taskId: string,
+  itemId: string
+): Promise<ActionResult> {
+  const guard = await requireStaff();
+  if (!guard.ok) return { success: false, error: guard.error };
+  const { supabase, userId, profile } = guard;
+
+  // RLS-scoped read: resolves only if the viewer can see the task.
+  const { data: task } = await supabase
+    .from('tasks')
+    .select('checklist_items')
+    .eq('id', taskId)
+    .single();
+  if (!task) return { success: false, error: 'Task not found or access denied.' };
+
+  const items = (task.checklist_items as ChecklistItem[]) || [];
+  const index = items.findIndex((item) => item.id === itemId);
+  if (index === -1) return { success: false, error: 'Checklist item not found.' };
+
+  const updated = items.map((item, i) => (i === index ? { ...item, completed: !item.completed } : item));
+
+  const { data: updatedRow, error } = await supabase
+    .from('tasks')
+    .update({ checklist_items: updated })
+    .eq('id', taskId)
+    .eq('firm_id', profile.firm_id)
+    .select('id')
+    .single();
+
+  if (error || !updatedRow) {
+    return { success: false, error: rlsFriendly(error?.message) };
+  }
+
+  await logTaskActivity({
+    supabase,
+    firmId: profile.firm_id,
+    taskId,
+    actorId: userId,
+    action: 'checklist_item_toggled',
+    newValue: { item: updated[index].text, completed: updated[index].completed },
   });
 
   revalidateTaskViews(taskId);
