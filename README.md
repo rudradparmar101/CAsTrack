@@ -55,19 +55,15 @@ npm run dev
 ```
 The application will be available at [http://localhost:3000](http://localhost:3000).
 
-## 🧪 Testing Credentials (Pre-configured)
+## 🧪 Testing Credentials
 
-If you are evaluating this project, you can use the following pre-configured credentials to test the different roles and the interaction between them:
+To evaluate this project, sign up for your own Admin account via `/signup`, then generate an invite code from the dashboard to create a Member account and test the interaction between the two roles.
 
 **1. Admin / Manager Account:**
-*   **Email**: `[REDACTED]`
-*   **Password**: [REDACTED]
-*   *Capabilities*: Can create tasks, view all firm tasks, add clients, view the invite code, and manage firm settings.
+*   Can create tasks, view all firm tasks, add clients, view the invite code, and manage firm settings.
 
 **2. Employee / Member Account:**
-*   **Email**: `[REDACTED]`
-*   **Password**: [REDACTED]
-*   *Capabilities*: Can only see tasks assigned specifically to them in the "My Tasks" view and mark them as complete.
+*   Can only see tasks assigned specifically to them in the "My Tasks" view and mark them as complete.
 
 ### Testing the Workflow:
 1. Log in as the Admin and create a new task assigned to the Employee.

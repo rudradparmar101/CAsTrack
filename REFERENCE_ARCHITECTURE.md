@@ -930,12 +930,9 @@ All mutating actions revalidate `/tasks` and `/dashboard` (and `/tasks/[id]` whe
 
 ---
 
-## 15. Test Credentials (Pre-configured in README)
+## 15. Test Credentials
 
-| Role   | Email                    | Password | Capabilities                                                     |
-|--------|----------------------------|----------|----------------------------------------------------------------------|
-| Admin  | `[REDACTED]`    | [REDACTED] | All admin capabilities                                           |
-| Member | `[REDACTED]` | [REDACTED] | View + complete only tasks assigned to them                    |
+Create your own Admin account via `/signup`, then use an invite code to create a Member account for testing role interactions (see README).
 
 ---
 
