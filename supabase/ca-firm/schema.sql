@@ -1848,9 +1848,14 @@ CREATE POLICY "Client managers can delete registrations"
 -- Prerequisite: create a PRIVATE bucket named exactly 'client-documents' in
 -- the Supabase dashboard first, then run this section.
 -- Object path convention: {firm_id}/{client_id}/{document_id}/{uuid}.{ext}
---   (storage.foldername(name))[1] = firm_id, [2] = client_id
+--   (storage.foldername(name))[1] = firm_id, [2] = client_id, [3] = document_id
 -- Downloads should still use short-lived signed URLs generated server-side
--- (as DeadlineTracker does); these policies are the defense-in-depth floor.
+-- (as DeadlineTracker does). For STAFF these policies are the firm-wide
+-- defense-in-depth floor; for CLIENT users the SELECT policy is the AUTHORITY
+-- for the curated portal view — it mirrors the public.documents table rules via
+-- can_access_document() so a client cannot read (download, sign, or even list)
+-- an internal / not-yet-visible / pending object under their own client folder
+-- (portal-isolation finding #7; migration 003).
 -- ============================================================================
 
 CREATE POLICY "Staff can read their firm's document files"
@@ -1861,11 +1866,25 @@ CREATE POLICY "Staff can read their firm's document files"
     AND (storage.foldername(name))[1] = public.get_user_firm_id()::text
   );
 
+-- Client storage reads are curated, not just client-scoped: reuse the
+-- table-layer predicate (can_access_document) on the document_id path segment
+-- so visible_to_client / approval_status are honored at the storage layer too.
+-- This governs both download AND list/enumeration (list() runs under this same
+-- SELECT policy). CASE keeps the ::uuid cast safe against attacker-controlled
+-- segment-[3] values (the client INSERT policy validates only [1]/[2]) — a
+-- non-UUID segment yields NULL, and can_access_document(NULL) is false.
 CREATE POLICY "Client users can read their own client's files"
   ON storage.objects FOR SELECT TO authenticated
   USING (
     bucket_id = 'client-documents'
-    AND (storage.foldername(name))[2] = public.get_user_client_id()::text
+    AND public.get_user_role() = 'client_user'
+    AND public.can_access_document(
+          CASE
+            WHEN (storage.foldername(name))[3] ~
+                 '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+            THEN ((storage.foldername(name))[3])::uuid
+          END
+        )
   );
 
 CREATE POLICY "Staff can upload files under their firm"
