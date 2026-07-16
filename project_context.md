@@ -5,6 +5,8 @@
 > **Version control:** git, pushed to a GitHub remote (`origin/main`). Working tree is clean and up to date with the remote.
 > **This file is the single source of truth for project state.** Update it at the end of every phase.
 
+> **Positioning constraint (2026-07-16, architectural, not marketing):** This is not a filing tool. It is deadline and notice discipline for an Indian CA firm. Features requiring GST/IT portal credential access or GSP/ERI licensing are out of scope by decision, not by backlog. See `docs/planning/scope-decision.md` and the "Deliberate non-goals" section of `docs/ROADMAP.md`.
+
 ---
 
 ## 0. Current status at a glance
@@ -329,6 +331,7 @@ The Tier-1 feature-gap items (§10): applicability-driven statutory task generat
 ### 4.9 Communication (Phase 11)
 
 - **Email** (`lib/email/resend.ts` + `lib/email/templates.ts`): a single `sendEmail({to, subject, html})` — the one place a future WhatsApp/SMS channel would sit alongside (per the roadmap's "channel-agnostic sender" decision). Fire-and-forget: errors are logged, never thrown. `RESEND_TEST_RECIPIENT` (`.env.local`) redirects every send there until a sending domain is verified (see §0 risk item below); `templates.ts` has one shared inline-styled layout plus four callers (generic notification, portal invite, statutory reminder, waiting_client nag).
+- **WhatsApp status (2026-07-16 decision, `docs/planning/scope-decision.md`):** WhatsApp Business API is deferred; the sender stays channel-agnostic by design so it can be added later without a redesign. Interim: `wa.me` click-to-chat deep links with pre-filled text — zero approval needed, no API. The Meta Business API application is not yet started; it is a weeks-long external dependency and should be kicked off before it becomes blocking, not after.
 - **Portal invites** (`clients/portal-actions.ts`): the `console.log` stub is gone — `inviteClientUserAction` now calls `sendEmail()` with the invite link; the URL is still returned to the caller for a copy-to-clipboard fallback.
 - **Notification emails** (`lib/tasks/activity.ts`): `notifyUser`/`notifyUsers` gained an opt-in `sendEmail?: boolean`. When true, after the in-app `notifications` insert, a second lookup resolves the recipient's email + role (to pick `/tasks/…` vs `/portal/tasks/…` for the CTA link) and sends. Set at the call sites the roadmap named — assignment (create + reassign + recurring-spawn), review request (`under_review`), rejection (send-back + document reject), completion (`completed` + `task_approved` + document approve). Comments and routine document-upload notifications deliberately stay in-app-only.
 - **Client-facing notifications (new):** two paths that previously notified nobody now notify the client_user (in-app + email, when a portal login exists): (a) `changeStageCore` on `→ waiting_client`; (b) `addTaskCommentAction` when staff publish a client-visible comment. Both resolve the client's profile via `client_id` + `role='client_user'` and no-op if there isn't one.
@@ -510,7 +513,7 @@ A product review from a practicing-Indian-CA perspective: the current build is a
 
 **Tier 2 — weekly/monthly:**
 
-UDIN register; FY-wise document organization + permanent file; structured filing outcomes (ARN/ack no., filed date) on completed tasks; portal-facing per-item document checklists (surface existing template `checklist_items` as received/pending); client groups (one promoter, many entities); timesheets + attendance/leave (article assistants); challan register (TDS/advance tax/GST payments per client per period).
+~~UDIN register~~ **resolved-in-12.5** — see `docs/ROADMAP.md` Phase 12.5; ~~structured filing outcomes (ARN/ack no., filed date) on completed tasks~~ **partially resolved (Ph10, filed date via `task_activities`); the ARN/acknowledgment-number field itself is resolved-in-12.5**; FY-wise document organization + permanent file; portal-facing per-item document checklists (surface existing template `checklist_items` as received/pending); client groups (one promoter, many entities); timesheets + attendance/leave (article assistants) — **note (2026-07-16): timesheets/attendance are now a deliberate non-goal, see `docs/ROADMAP.md`**; challan register (TDS/advance tax/GST payments per client per period).
 
 **Tier 3 — moat (post-pilot):**
 

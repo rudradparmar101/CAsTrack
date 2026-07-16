@@ -74,10 +74,34 @@ Onboard one friendly firm (lined up during Ph9–10). Collect feedback. Feedback
 - [ ] Migration 002 (same ⚠ HUMAN approval gate as Ph9): fee_masters (client × service, amount, periodicity); firm_invoices + line items (firm→client, GST fields, SAC 9982, per-firm-FY numbering); receipts (mode, TDS u/s 194J deducted); outstanding view; fees_hold flag on clients.
 - [ ] UI: invoice create + portal-visible/email delivery, receipts entry, per-client + firm-wide outstanding ledger, fees-hold banner on tasks/grid.
 
+## Phase 12.5 — Statutory identifiers & migration on-ramp [ ]
+- [ ] ARN/acknowledgment number capture on filing outcomes; nullable field on the
+      outcome record; surfaced in filing-status grid; visible_to_client gated in portal
+- [ ] UDIN register: capture only, NOT auto-generated. Fields: udin, document type,
+      client, date, signing partner, linked task/document. ICAI portal integration
+      is out of scope.
+- [ ] Bulk client import from Excel/CSV: service-role-only path, validates PAN/GSTIN
+      format, dry-run preview before commit, idempotent on PAN within firm
+- [ ] Exit gate: import 50 dummy clients, ARN + UDIN round-trip through UI and portal,
+      RLS smoke still 14/14
+
 ## Phase 13 — Registers + permissions UI [ ]
 - [ ] Credentials vault (⚠ migration gate): pgsodium/Supabase Vault server-side encryption; reveal only via a narrow server action gated by new vault.view/vault.manage permissions; audit-log table recording every reveal.
 - [ ] DSC register: dsc_records (holder client/person, expiry, storage location) + custody movements (in/out, who, when); expiry alerts into the Ph11 scheduler.
 - [ ] Per-employee user_permissions editor on the Team page (grant/revoke overrides).
+
+## Phase 13.5 — Notices & litigation module (WEDGE) [ ]  ⚠ HUMAN GATE — do not start until >=15 real CA firm validation conversations confirm notice-deadline pain. If they don't, re-scope the wedge, not the project.
+- [ ] notices table: type (143(1)/139(9)/148/ASMT-10/DRC-01/GSTR-3A/other), client_id,
+      firm_id, DIN/reference no, date_received, date_of_notice, statutory_response_days
+      per type, computed response_deadline, extension record
+- [ ] Reuse the existing task stage machine. Do NOT build a second workflow engine.
+- [ ] Escalating reminders T-15/7/3/1 to assignee AND partner (partner escalation is
+      the differentiator)
+- [ ] Response record: attached documents + submission acknowledgment (ARN from 12.5)
+- [ ] Partner dashboard: all open notices firm-wide, sorted by days-to-deadline
+- [ ] Explicitly OUT of scope: AI extraction, auto-drafting, portal submission.
+      Manual entry is v1. The value is deadline discipline, not typing.
+- [ ] Exit gate: notice -> task -> reminder -> response -> ARN end to end, RLS-verified
 
 ## Phase 14 — Final RLS pass + committed policy tests [ ]
 - [ ] Re-review every policy vs finalized behavior: Ph3 documents INSERT relaxation; tasks.assign branch decision; doc↔task client-consistency trigger; stage-history note via session variable; all Ph9–13 tables. ⚠ migration gate for policy changes.
@@ -90,6 +114,18 @@ Onboard one friendly firm (lined up during Ph9–10). Collect feedback. Feedback
 
 ## Deferred (post-pilot, promote to phases on demand)
 Full notices module (Ph9 category tag is the stopgap) · client groups · timesheets/attendance · GSP/Tally sync · UDIN/challan registers · WhatsApp Business API channel (Meta application + hook into the Ph11 channel-agnostic sender) — Jay's call: do last, if at all. Meta approval takes weeks — start the application that far ahead of wanting it live.
+
+## Deliberate non-goals
+These are DECISIONS, not backlog. A future session must not build them opportunistically:
+- GST/IT portal auto-fetch, GSTR-2B reconciliation, filing-from-platform
+  (GSP/ERI licensing + credential liability)
+- Tally sync
+- Staff attendance / GPS tracking / leave management
+- Timesheets & billable-hour tracking (most small Indian firms bill per-service)
+- Native mobile app (responsive web only)
+- AI anomaly detection / AI proposal generation
+- Peer review & audit workpapers
+- WhatsApp Business API (deferred; interim = wa.me click-to-chat deep links)
 
 ## Appendix — Feature-gap reference (why these phases exist)
 Tier 1 (sellability core): applicability engine + calendar-generated statutory tasks; filing-status grid; client billing/receivables; credentials vault; DSC register; notice tracker; WhatsApp-first automated reminders. Tier 2: UDIN register; FY-wise docs + permanent file; filing outcomes; portal document checklists; client groups; timesheets; challan register. Tier 3 (moat): GSP/ERI sync; Tally import; engagement letters/NOC/working papers. Core flaw fixed by Ph9–10: completion-chained recurrence means a stalled month never spawns the next statutory task.
