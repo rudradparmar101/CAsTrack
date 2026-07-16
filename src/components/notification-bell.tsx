@@ -24,13 +24,20 @@ const typeConfig: Record<NotificationType, { icon: React.ElementType; color: str
   document_uploaded: { icon: FileText, color: 'text-[var(--color-info)]' },
 };
 
+const DEFAULT_BUTTON_CLASSNAME =
+  'relative p-2 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-muted)] transition-colors focus-ring';
+
 interface NotificationBellProps {
   /** Task-reference notifications link to `${basePath}/${reference_id}` —
    *  '/tasks' for staff (default), '/portal/tasks' for the client portal. */
   basePath?: string;
+  /** Full override for the bell button's className — callers on a
+   *  non-default surface (e.g. the dark topbar) need different text/hover
+   *  colors than the light-surface default. */
+  buttonClassName?: string;
 }
 
-export function NotificationBell({ basePath = '/tasks' }: NotificationBellProps) {
+export function NotificationBell({ basePath = '/tasks', buttonClassName }: NotificationBellProps) {
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -121,7 +128,7 @@ export function NotificationBell({ basePath = '/tasks' }: NotificationBellProps)
           setIsOpen(!isOpen);
           if (!isOpen) fetchNotifications();
         }}
-        className="relative p-2 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-muted)] transition-colors focus-ring"
+        className={buttonClassName ?? DEFAULT_BUTTON_CLASSNAME}
         aria-label="Notifications"
       >
         <Bell className="h-5 w-5" />

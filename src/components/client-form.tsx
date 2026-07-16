@@ -12,6 +12,7 @@ import {
   REGISTRATION_TYPE_OPTIONS,
   GST_SCHEME_OPTIONS,
   AUDIT_TYPE_OPTIONS,
+  GSTIN_RE,
 } from '@/lib/ca-options';
 import type {
   ActionResult,
@@ -174,6 +175,15 @@ export function ClientForm({
 
     const formData = new FormData(e.currentTarget);
     if (client) formData.set('id', client.id);
+
+    // Same GSTIN_RE the server enforces (lib/ca-options.ts) — catches the
+    // typo case immediately instead of round-tripping to the server action.
+    const gstinRaw = (formData.get('gstin') as string | null)?.trim().toUpperCase() || '';
+    if (gstinRaw && !GSTIN_RE.test(gstinRaw)) {
+      setError('GSTIN format looks invalid (e.g., 27ABCDE1234F1Z5).');
+      setLoading(false);
+      return;
+    }
 
     // Repeatable sub-forms travel as JSON — the action validates each row.
     // The local `key` field is UI-only state and stripped before submit.

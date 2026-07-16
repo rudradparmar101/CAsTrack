@@ -1,6 +1,7 @@
 import React from 'react';
-import { redirect } from 'next/navigation';
+import { UsersRound } from 'lucide-react';
 import { getAuthContext } from '@/lib/auth';
+import { EmptyState } from '@/components/ui/empty-state';
 import { TeamPageClient } from './team-page-client';
 import { MEMBERS_PAGE_SIZE } from '@/lib/pagination';
 import type { DepartmentWithMembers } from '@/lib/types';
@@ -8,11 +9,17 @@ import type { DepartmentWithMembers } from '@/lib/types';
 export default async function TeamPage() {
   const { supabase, userId, profile, firm } = await getAuthContext();
 
-  if (profile.role !== 'partner') {
-    const { data: allowed } = await supabase.rpc('has_permission', { p_key: 'team.view' });
-    if (allowed !== true) {
-      redirect('/dashboard');
-    }
+  const isPartner = profile.role === 'partner';
+  const canView = isPartner || (await supabase.rpc('has_permission', { p_key: 'team.view' })).data === true;
+
+  if (!canView) {
+    return (
+      <EmptyState
+        icon={<UsersRound className="h-10 w-10" />}
+        title="No access"
+        description="You don't have permission to view the team page."
+      />
+    );
   }
 
   // Fetch first page of firm members (for the paginated table)

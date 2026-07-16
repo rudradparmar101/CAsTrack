@@ -23,8 +23,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
+import { EmptyState } from '@/components/ui/empty-state';
 import { ClientForm } from '@/components/client-form';
 import { DocumentsSection } from '@/components/documents-section';
+import { TaskSummaryCard } from '@/components/task/task-summary-card';
 import { updateClientAction, setClientActiveAction } from '../actions';
 import { inviteClientUserAction } from '../portal-actions';
 import { addressTypeLabel, auditTypeLabel, businessTypeLabel, gstSchemeLabel, registrationTypeLabel } from '@/lib/ca-options';
@@ -34,6 +36,7 @@ import type {
   ClientAuthorizedPerson,
   ClientDocumentWithDetails,
   ClientRegistration,
+  FirmTaskWithRefs,
   Profile,
 } from '@/lib/types';
 
@@ -44,6 +47,7 @@ interface ClientDetailClientProps {
   authorizedPersons: ClientAuthorizedPerson[];
   registrations: ClientRegistration[];
   documents: ClientDocumentWithDetails[];
+  tasks: FirmTaskWithRefs[];
   canManage: boolean;
   canUploadDocs: boolean;
   canApproveDocs: boolean;
@@ -56,6 +60,7 @@ export function ClientDetailClient({
   authorizedPersons,
   registrations,
   documents,
+  tasks,
   canManage,
   canUploadDocs,
   canApproveDocs,
@@ -348,15 +353,31 @@ export function ClientDetailClient({
         canApprove={canApproveDocs}
       />
 
-      {/* Tasks placeholder — module comes in a later phase */}
+      {/* Tasks — same source + RLS scoping as the main /tasks list, filtered
+          to this client server-side. */}
       <Card>
-        <h2 className="text-lg font-semibold text-[var(--color-text)] mb-2 flex items-center gap-2">
+        <h2 className="text-lg font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
           <ClipboardList className="h-5 w-5 text-[var(--color-accent)]" />
           Tasks
+          {tasks.length > 0 && (
+            <span className="text-xs font-normal text-[var(--color-text-muted)]">
+              ({tasks.length})
+            </span>
+          )}
         </h2>
-        <p className="text-sm text-[var(--color-text-muted)]">
-          Compliance tasks for this client will appear here once the Tasks module is built.
-        </p>
+        {tasks.length > 0 ? (
+          <div className="space-y-3">
+            {tasks.map((task) => (
+              <TaskSummaryCard key={task.id} task={task} />
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={<ClipboardList className="h-10 w-10" />}
+            title="No tasks yet"
+            description="Tasks for this client — statutory or manually created — will appear here."
+          />
+        )}
       </Card>
 
       {/* Edit modal — preloads the full address/person sets, which the

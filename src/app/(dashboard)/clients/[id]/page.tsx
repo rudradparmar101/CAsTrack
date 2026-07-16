@@ -2,7 +2,8 @@ import React from 'react';
 import { notFound } from 'next/navigation';
 import { getAuthContext } from '@/lib/auth';
 import { ClientDetailClient } from './client-detail-client';
-import type { ClientDocumentWithDetails, Profile } from '@/lib/types';
+import { TASK_LIST_SELECT } from '../../tasks/filters';
+import type { ClientDocumentWithDetails, FirmTaskWithRefs, Profile } from '@/lib/types';
 
 interface ClientDetailPageProps {
   params: Promise<{ id: string }>;
@@ -34,6 +35,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
     { data: persons },
     { data: registrations },
     { data: documents },
+    { data: tasks },
     canManage,
     canUpload,
     canApprove,
@@ -60,6 +62,14 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
       )
       .eq('client_id', id)
       .order('created_at', { ascending: false }),
+    // Same source + RLS scoping as the main /tasks list, filtered to this
+    // client — partners see all, employees see (assigned to them) ∪ (their
+    // departments'), same as everywhere else task rows are read.
+    supabase
+      .from('tasks')
+      .select(TASK_LIST_SELECT)
+      .eq('client_id', id)
+      .order('due_date', { ascending: true }),
     isPartner
       ? true
       : supabase
@@ -101,6 +111,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
       authorizedPersons={persons || []}
       registrations={registrations || []}
       documents={docsWithUrls}
+      tasks={(tasks as unknown as FirmTaskWithRefs[]) || []}
       canManage={canManage}
       canUploadDocs={canUpload}
       canApproveDocs={canApprove}

@@ -407,15 +407,23 @@ export async function updateClientAction(formData: FormData): Promise<ActionResu
   const registrationsResult = parseRegistrations(formData);
   if (!registrationsResult.ok) return { success: false, error: registrationsResult.error };
 
-  // Explicitly firm-scoped (defense-in-depth) in addition to RLS.
-  const { error } = await supabase
+  // Explicitly firm-scoped (defense-in-depth) in addition to RLS. Uses the
+  // .select().single() pattern (same as tasks/actions.ts) rather than a bare
+  // .update(): an RLS-denied update matches zero rows and returns error=null,
+  // which would otherwise silently report success with nothing written.
+  const { data: updated, error } = await supabase
     .from('clients')
     .update(fields.values)
     .eq('id', id)
-    .eq('firm_id', firmId);
+    .eq('firm_id', firmId)
+    .select('id')
+    .single();
 
-  if (error) {
-    return { success: false, error: error.message };
+  if (error || !updated) {
+    return {
+      success: false,
+      error: error?.message || 'Update was blocked — the client may no longer be visible to you.',
+    };
   }
 
   // Replace-all strategy for the repeatable sub-forms: the edit form always

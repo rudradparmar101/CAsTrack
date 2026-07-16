@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useSyncExternalStore } from 'react';
-import { Menu, Moon, Sun } from 'lucide-react';
+import Link from 'next/link';
+import { Menu, Moon, Sun, Clock } from 'lucide-react';
 import type { Profile } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { NotificationBell } from '@/components/notification-bell';
@@ -35,6 +36,16 @@ export function Topbar({ profile, onMenuClick }: TopbarProps) {
       >
         <Menu className="h-5 w-5" />
       </button>
+
+      {/* App/firm branding — single source of truth, sidebar doesn't repeat it. */}
+      <Link href="/dashboard" className="flex items-center gap-2.5">
+        <div className="h-8 w-8 rounded-lg bg-[var(--color-accent)] flex items-center justify-center shrink-0">
+          <Clock className="h-4 w-4 text-[var(--color-accent-foreground)]" />
+        </div>
+        <span className="hidden sm:block text-base font-semibold text-[var(--color-text)]">
+          CA Firm Manager
+        </span>
+      </Link>
 
       <div className="flex-1" />
 

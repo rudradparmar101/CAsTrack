@@ -1009,7 +1009,7 @@ INSERT INTO public.role_permissions (role, permission_key, allowed) VALUES
   ('employee', 'billing.view',            false),
   ('employee', 'billing.manage',          false),
   ('employee', 'reports.view',            false),
-  ('employee', 'team.view',               true),
+  ('employee', 'team.view',               false),
   ('employee', 'team.manage',             false),
   ('employee', 'templates.manage',        false),
   ('employee', 'settings.manage',         false);
