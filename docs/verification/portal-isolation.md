@@ -294,3 +294,100 @@ E1 specifically confirms the CASE guard's purpose: an attacker-controlled non-UU
 **Is the portal safe to carry Phase-12 financial data on the basis of this run?** On the specific storage-isolation dependency that §4 flagged as blocking — **yes, now**. Every boundary in the original attack list holds, #7 is closed with a genuine (non-hollow) positive alongside, and the harness is committed and re-runnable for future regression checks.
 
 No architectural finding surfaced this run (the fix behaves exactly as migration 003 intended). No code, schema, or migration was modified; no data was deleted (testing-only session). No fix proposed or applied.
+
+---
+
+## 7. Billing RLS & money-path verification — migration 004 (2026-07-18) — **NEW ARCHITECTURAL FINDING**
+
+> **Date:** 2026-07-18
+> **Type:** Testing-only session. No code, schema, or migration was modified. No production data was deleted.
+> **Scope:** `004_client_billing.sql`, reported applied to the live project (`fwmmdyebvzncpezdwnxm`). This is the first adversarial attack on the billing surface, and specifically on the migration's architectural exception: client access to invoices runs through the **DEFINER views** `client_invoices` / `client_invoice_items` (predicate `client_id = get_user_client_id() AND status <> 'draft'`), NOT through RLS — `client_users` have no policy on any billing table. That view path had never been attacked before; every view assertion here is a **primary** check of a new mechanism.
+> **Harness:** `scripts/verify/08-billing-rls.mjs` (committed, self-seeding, idempotent — seed tag `bilrls1`, password `PortalIso123!`). Service-role for seeding; anon-key `signInWithPassword` sessions for every assertion (partner, three employees at different permission levels, three portal clients across two firms). The app layer is bypassed entirely.
+
+### 7.1 Result summary
+
+**27 of 29 assertions PASS. 2 FAIL — both the same finding: portal clients can WRITE to `firm_invoices` through the auto-updatable DEFINER views.**
+
+| Group | Check | Verdict |
+|---|---|---|
+| **Client read path (primary — the DEFINER-view exception)** | | |
+| C1 ×5 | U_A1 direct `SELECT` on `firm_invoices` / `firm_invoice_items` / `receipts` / `fee_masters` / `firm_invoice_counters` → 0 rows each | **PASS** |
+| C1b | U_A1 `SELECT client_outstanding` (security_invoker view) → 0 rows | **PASS** |
+| C6 | U_A1 `client_invoices` → own non-draft rows only, incl. the issued one (not a brick) | **PASS** |
+| C7 | `client_invoices` exposes neither `internal_notes` nor `cancellation_reason` (columns absent; explicit select errors) | **PASS** |
+| C8 | `client_invoice_items` → own issued items visible, sibling items 0 | **PASS** |
+| C9 | U_A1 `client_invoices` for sibling A2 → 0 rows | **PASS** |
+| C10 | U_A1 own **draft** invoice not visible through `client_invoices` | **PASS** |
+| C11 | Cross-firm: U_B1 sees only Firm B; neither client sees the other firm's invoice | **PASS** |
+| C12a | U_A1 **INSERT** through the views → denied | **PASS** *(but incidental — see 7.3)* |
+| **C12b** | **U_A1 `UPDATE` own issued invoice `status='paid'` through the view → expected DENIED** | **FAIL** |
+| **C12c** | **U_A1 `UPDATE` own invoice `amount_received` through the view → expected DENIED** | **FAIL** |
+| C13 | U_A1 `rpc issue_firm_invoice(own draft)` → denied; draft unchanged | **PASS** |
+| **Staff permission matrix** | | |
+| S1 | PA (partner) reads invoices / receipts / fee_masters | **PASS** |
+| S2 | E0 (employee, no billing perm) reads nothing across all 5 billing tables | **PASS** |
+| S3 | EV (`billing.view`) reads invoices / receipts / fee_masters / counters | **PASS** |
+| S4 | EV (view only) cannot INSERT draft / UPDATE invoice / INSERT receipt | **PASS** |
+| S5 | EM (`billing.view` + `billing.manage`) creates a draft and issues it (finding-4 pairing rule, end-to-end under an employee JWT) | **PASS** |
+| **Integrity / money paths** | | |
+| I1 | Two **concurrent** issues in one firm+FY → both succeed, distinct seqs | **PASS** |
+| I2 | Delete a draft → next issued number is counter+1 (no gap consumed) | **PASS** |
+| I3 | UPDATE frozen column on an issued invoice → rejected by `guard_firm_invoice` | **PASS** |
+| I4 | Line-item INSERT/UPDATE/DELETE on an issued invoice → all rejected by `guard_invoice_items_frozen` | **PASS** |
+| I5 | Receipt 90% cash + 10% TDS (u/s 194J) → invoice `paid`, `client_outstanding` zero | **PASS** |
+| I6 | Cancel an invoice with receipts applied → rejected | **PASS** |
+| I7 | Receipt whose `client_id` ≠ the invoice's client → rejected by `guard_receipt` | **PASS** |
+| I8 | Gapless series audit in a fresh FY: N issues → seqs exactly 1..N, counter == N, interleaved draft-delete no gap | **PASS** |
+
+Every boundary the prompt enumerated holds **except** the "INSERT/UPDATE/DELETE through the views — denied" item, which is where the finding lives.
+
+### 7.2 The finding — portal clients can write to `firm_invoices` through the DEFINER views
+
+`client_invoices` and `client_invoice_items` are **DEFINER-rights** views (deliberately **not** `security_invoker` — with no client policy on the base tables, an invoker view would return nothing). They have **no `INSTEAD OF` trigger** and **no `WITH CHECK OPTION`**, so PostgreSQL treats them as **auto-updatable**: a write through the view is rewritten as a write against `firm_invoices` executed **with the view owner's rights**, which bypasses the fact that the base table has *no client write policy at all*.
+
+Demonstrated as **U_A1 (a portal client, own anon-key JWT), raw PostgREST**, against a fresh receiptless *issued* invoice owned by that client:
+
+```js
+// as U_A1 — marks OWN issued invoice paid with ZERO money received
+await uA1.from('client_invoices').update({ status: 'paid' }).eq('id', invId);
+//   → error: none; rows: 1;  DB status after: 'paid'  (amount_received still 0)
+
+// as U_A1 — rewrites the receivables ledger directly
+await uA1.from('client_invoices').update({ amount_received: 999999 }).eq('id', invId);
+//   → error: none;  DB amount_received after: 999999
+```
+
+Out-of-band probes (not in the committed suite, run once against throwaway `bilrls1` rows) established the full blast radius:
+
+- **DELETE succeeds.** `uA1.from('client_invoices').delete().eq('id', <own receiptless issued invoice>)` returned 1 row and removed the row from `firm_invoices` — a portal client can **delete a statutory issued invoice**, which also **gaps the "gapless" per-firm-per-FY series** (the counter is not decremented). This permanently gapped firm A's live `2026-27` seed series during this session (a throwaway seed firm; noted for transparency — it is why the suite's gapless audit runs in a fresh, isolated FY).
+- **INSERT is blocked — but only incidentally.** The insert fails on `created_by` `NOT NULL` (that column is not part of the view, so it defaults to NULL), **not** on any access-control rule. Had the view exposed `created_by`, or the column been nullable/defaulted, a client could forge invoice rows for its own `client_id`.
+- **Writes are bounded to the client's own `client_id`** — an UPDATE filtered by a sibling's `client_id` affected 0 rows (the view predicate does scope the rewritten write). So this is **not** a cross-tenant breach; it is a client tampering with **its own** billing records.
+
+### 7.3 Root cause
+
+Migration 004 ends the view block with:
+
+```sql
+REVOKE ALL ON public.client_invoices, public.client_invoice_items FROM anon, public;
+GRANT SELECT ON public.client_invoices, public.client_invoice_items TO authenticated;
+```
+
+The `REVOKE` targets `anon` and `PUBLIC`, but **`authenticated` is a separate role — `PUBLIC` ≠ `authenticated`** — and Supabase's default privileges grant `authenticated` full DML on newly created objects in `public`. The `GRANT SELECT ... TO authenticated` is therefore **additive**; it never removes the pre-existing INSERT/UPDATE/DELETE that Supabase's defaults already handed `authenticated` on these views. Combined with the views being auto-updatable definer views, that residual DML privilege is exactly what lets a portal client's UPDATE/DELETE reach `firm_invoices` with the owner's rights. The migration's stated invariants — "the ONLY read path for `client_users`", "issued invoices are immutable — cancel and reissue", "issued invoices are cancelled, never deleted" — are all defeated from the portal by this one gap.
+
+Note the `guard_firm_invoice` trigger does *not* backstop this: its frozen-column list omits `status`, `amount_received`, `tds_received`, `internal_notes`, and `cancellation_reason` (by design — status/settlement move via the receipts trigger, notes stay editable post-issue). So a direct client write to `status` or `amount_received` sails through the guard, and a DELETE never reaches the guard at all (it's an UPDATE-only trigger).
+
+### 7.4 Why it doesn't show up in normal app use
+
+The app never issues writes against `client_invoices` — the portal only reads through it, and all staff writes go against the base tables under RLS. Under that flow the gap is latent. It becomes reachable the instant a portal client uses their own valid JWT against PostgREST directly — the exact threat model this exercise targets ("the UI proves nothing; RLS is the authority").
+
+### 7.5 Verdict
+
+- **Client read isolation through the DEFINER views is solid** (C1–C11, C13): no direct base-table access, no sibling or cross-firm leakage, drafts hidden, `internal_notes` / `cancellation_reason` never exposed, and `issue_firm_invoice()` cannot be called by a client.
+- **Staff permission matrix and every server-side money-path invariant hold** (S1–S5, I1–I8): gapless numbering under concurrency, draft-delete without gap, issued-invoice and line-item immutability, TDS u/s 194J settlement, cancel-with-receipts rejection, and `guard_receipt`'s cross-client rejection all enforced by the database.
+- **One real integrity failure: the DEFINER views are a write path, not just a read path.** A portal client can mark its own issued invoices paid, rewrite `amount_received`, and delete issued invoices (gapping the statutory series) — all via `authenticated`'s residual DML on auto-updatable definer views. Scoped to the client's own `client_id`; not cross-tenant.
+
+**Is the portal safe to carry Phase-12 financial data on the basis of this run?** On the read/isolation dependency §4/§6 flagged — yes, the curated read path holds. **But not on write integrity:** a client can tamper with its own invoices' payment state and destroy issued records until this view write-through is closed and re-verified with this same committed harness (the harness fails exactly the two checks that must flip to PASS).
+
+### 7.6 Architectural finding flagged for decision
+
+Closing this is an architectural choice, not a one-line patch, so per session rules **no fix was proposed or applied**. The decision is *how* to make the views read-only for `authenticated` — e.g. `REVOKE INSERT, UPDATE, DELETE ON` both views `FROM authenticated` (and audit Supabase default-privilege grants so new objects don't silently re-open it), and/or add `INSTEAD OF INSERT/UPDATE/DELETE` triggers that raise, and/or reconsider whether these should be `security_invoker` views paired with a curated column-limited client SELECT policy. That trade-off is the user's to make. No code, schema, or migration was modified this session; no production data was deleted.
