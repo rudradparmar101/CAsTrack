@@ -1,6 +1,7 @@
 import React from 'react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Building2, CheckSquare, Hourglass } from 'lucide-react';
+import { Building2, CheckSquare, Hourglass, Receipt } from 'lucide-react';
 import { getAuthContext } from '@/lib/auth';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -90,6 +91,13 @@ export default async function PortalPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              href="/portal/billing"
+              className="p-2 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-accent)] hover:bg-[var(--color-accent-muted)] transition-colors"
+              title="Billing"
+            >
+              <Receipt className="h-5 w-5" />
+            </Link>
             <NotificationBell basePath="/portal/tasks" />
             <PortalSignOutButton />
           </div>

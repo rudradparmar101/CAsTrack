@@ -106,6 +106,30 @@ export function statutoryReminderEmail(params: {
   });
 }
 
+export function invoiceIssuedEmail(params: {
+  clientName: string;
+  firmName: string;
+  invoiceNumber: string;
+  totalAmount: number;
+  dueDate: string | null;
+  portalUrl?: string;
+}): string {
+  const amountText = new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(params.totalAmount);
+  return layout({
+    preheader: `Invoice ${params.invoiceNumber} for ${amountText}`,
+    heading: `New invoice from ${params.firmName}`,
+    bodyHtml: `<p style="margin:0 0 12px;">Hello ${params.clientName},</p>
+      <p style="margin:0 0 12px;">${params.firmName} has issued invoice <strong>${params.invoiceNumber}</strong> for <strong>${amountText}</strong>${params.dueDate ? `, due on <strong>${params.dueDate}</strong>` : ''}. You can view the full invoice in your client portal.</p>`,
+    ctaUrl: params.portalUrl,
+    ctaLabel: 'View invoice in client portal',
+    firmName: params.firmName,
+  });
+}
+
 export function waitingClientNagEmail(params: {
   clientName: string;
   firmName: string;

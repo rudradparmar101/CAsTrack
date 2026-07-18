@@ -107,6 +107,8 @@ export interface Client {
   phone: string | null;
   /** Internal notes — never exposed to client_user UI. */
   notes: string | null;
+  /** Phase 12: "fees pending — hold work" advisory flag. */
+  fees_hold: boolean;
   is_active: boolean;
   created_by: string;
   created_at: string;
@@ -333,7 +335,7 @@ export interface FirmTaskWithRefs extends FirmTask {
 export interface FirmTaskDetail extends FirmTask {
   client: Pick<
     Client,
-    'id' | 'name' | 'trade_name' | 'business_type' | 'gstin' | 'pan' | 'email' | 'phone' | 'is_active'
+    'id' | 'name' | 'trade_name' | 'business_type' | 'gstin' | 'pan' | 'email' | 'phone' | 'is_active' | 'fees_hold'
   > | null;
   department: Pick<Department, 'id' | 'name'> | null;
   assignee: Pick<Profile, 'id' | 'name'> | null;
@@ -456,4 +458,149 @@ export interface ActionResult {
 
 export interface ActionResultWithData<T> extends ActionResult {
   data?: T;
+}
+
+// ============================================
+// Client billing & receivables (Phase 12 schema, migration 004/005)
+// ============================================
+
+export type InvoiceStatus = 'draft' | 'issued' | 'partially_paid' | 'paid' | 'cancelled';
+export type ReceiptMode = 'cash' | 'cheque' | 'bank_transfer' | 'upi' | 'card' | 'other';
+export type FeeMasterPeriodicity = 'one_time' | 'monthly' | 'quarterly' | 'annual';
+
+export interface FeeMaster {
+  id: string;
+  firm_id: string;
+  client_id: string | null; // NULL = firm-wide rate card row
+  service_name: string;
+  compliance_type_id: string | null;
+  amount: number;
+  periodicity: FeeMasterPeriodicity;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FirmInvoice {
+  id: string;
+  firm_id: string;
+  client_id: string;
+  status: InvoiceStatus;
+  financial_year: string;
+  invoice_seq: number | null;
+  invoice_number: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  firm_gstin: string | null;
+  client_gstin: string | null;
+  place_of_supply: string | null;
+  place_of_supply_state_code: string | null;
+  is_interstate: boolean;
+  subtotal: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  round_off: number;
+  total_amount: number;
+  tds_expected: number;
+  amount_received: number;
+  tds_received: number;
+  internal_notes: string | null;
+  cancellation_reason: string | null;
+  cancelled_at: string | null;
+  issued_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FirmInvoiceItem {
+  id: string;
+  firm_id: string;
+  invoice_id: string;
+  description: string;
+  sac_code: string;
+  quantity: number;
+  rate: number;
+  taxable_value: number;
+  gst_rate: number;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface Receipt {
+  id: string;
+  firm_id: string;
+  client_id: string;
+  invoice_id: string;
+  receipt_date: string;
+  amount: number;
+  tds_amount: number;
+  mode: ReceiptMode;
+  reference_no: string | null;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientOutstanding {
+  firm_id: string;
+  client_id: string;
+  open_invoice_count: number;
+  outstanding: number;
+  total_billed: number;
+  total_received: number;
+  total_tds: number;
+  oldest_due_date: string | null;
+  bucket_0_30: number;
+  bucket_31_60: number;
+  bucket_61_90: number;
+  bucket_90_plus: number;
+}
+
+/** Curated read-only shape a client_user gets via the client_invoices view —
+ *  never internal_notes/cancellation_reason (excluded at the view level). */
+export interface ClientInvoice {
+  id: string;
+  firm_id: string;
+  client_id: string;
+  status: InvoiceStatus;
+  financial_year: string;
+  invoice_number: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  firm_gstin: string | null;
+  client_gstin: string | null;
+  place_of_supply: string | null;
+  place_of_supply_state_code: string | null;
+  is_interstate: boolean;
+  subtotal: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  round_off: number;
+  total_amount: number;
+  tds_expected: number;
+  amount_received: number;
+  tds_received: number;
+  issued_at: string | null;
+  created_at: string;
+}
+
+export interface ClientInvoiceItem {
+  id: string;
+  invoice_id: string;
+  description: string;
+  sac_code: string;
+  quantity: number;
+  rate: number;
+  taxable_value: number;
+  gst_rate: number;
+  sort_order: number;
+}
+
+export interface FirmInvoiceWithClient extends FirmInvoice {
+  client: Pick<Client, 'id' | 'name' | 'trade_name'>;
 }

@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { Briefcase, Mail, Phone } from 'lucide-react';
+import { Briefcase, Mail, Phone, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { businessTypeLabel } from '@/lib/ca-options';
@@ -11,7 +11,7 @@ interface TaskClientCardProps {
    *  clients their tasks reference (employee_has_task_for_client). */
   client: Pick<
     Client,
-    'id' | 'name' | 'trade_name' | 'business_type' | 'gstin' | 'pan' | 'email' | 'phone' | 'is_active'
+    'id' | 'name' | 'trade_name' | 'business_type' | 'gstin' | 'pan' | 'email' | 'phone' | 'is_active' | 'fees_hold'
   > | null;
 }
 
@@ -29,6 +29,12 @@ export function TaskClientCard({ client }: TaskClientCardProps) {
         </p>
       ) : (
         <div className="space-y-2 text-sm">
+          {client.fees_hold && (
+            <div className="flex items-center gap-1.5 rounded-lg bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-warning-text)]">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              Fees pending — hold work
+            </div>
+          )}
           <div className="flex items-start justify-between gap-2">
             <Link
               href={`/clients/${client.id}`}

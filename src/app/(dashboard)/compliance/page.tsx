@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, AlertTriangle } from 'lucide-react';
 import { getAuthContext } from '@/lib/auth';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -120,7 +120,13 @@ export default async function CompliancePage() {
                 return (
                   <tr key={client.id}>
                     <td className="sticky left-0 bg-[var(--color-surface)] px-3 py-2 font-medium text-[var(--color-text)] whitespace-nowrap">
-                      <Link href={`/clients/${client.id}`} className="hover:text-[var(--color-accent)]">
+                      <Link href={`/clients/${client.id}`} className="inline-flex items-center gap-1.5 hover:text-[var(--color-accent)]">
+                        {client.fees_hold && (
+                          <AlertTriangle
+                            className="h-3.5 w-3.5 text-[var(--color-warning)] shrink-0"
+                            aria-label="Fees pending — hold work"
+                          />
+                        )}
                         {client.name}
                       </Link>
                     </td>

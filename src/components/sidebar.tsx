@@ -15,6 +15,7 @@ import {
   X,
   LayoutTemplate,
   ShieldCheck,
+  Receipt,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -31,6 +32,7 @@ const adminNavItems = [
   { href: '/clients', label: 'Clients', icon: Users },
   { href: '/tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/compliance', label: 'Filing Status', icon: ShieldCheck },
+  { href: '/billing', label: 'Billing', icon: Receipt },
   { href: '/templates', label: 'Templates', icon: LayoutTemplate },
   { href: '/team', label: 'Team', icon: UsersRound },
   { href: '/settings', label: 'Settings', icon: Settings },

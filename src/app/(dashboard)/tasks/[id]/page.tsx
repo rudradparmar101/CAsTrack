@@ -35,7 +35,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
     .from('tasks')
     .select(
       `*,
-       client:client_id(id, name, trade_name, business_type, gstin, pan, email, phone, is_active),
+       client:client_id(id, name, trade_name, business_type, gstin, pan, email, phone, is_active, fees_hold),
        department:department_id(id, name),
        assignee:assigned_to(id, name),
        reviewer:reviewer_id(id, name),
