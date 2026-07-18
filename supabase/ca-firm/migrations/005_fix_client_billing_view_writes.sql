@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Migration 005 — Close client-writable DEFINER view gap on billing views
--- Target: the LIVE CA Firm Manager Supabase project (fwmmdyebvzncpezdwnxm).
+-- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
 -- NOT YET APPLIED — present to Jay for approval first (same ⚠ HUMAN gate as
 -- migrations 001/002/003/004), apply via the Supabase SQL editor, read-only
 -- verify with scripts/verify/08-billing-rls.mjs (checks C12b/C12c must flip

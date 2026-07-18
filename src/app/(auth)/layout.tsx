@@ -14,7 +14,7 @@ export default function AuthLayout({
           <div className="h-10 w-10 rounded-xl bg-[var(--color-accent)] flex items-center justify-center">
             <Clock className="h-5 w-5 text-white" />
           </div>
-          <span className="text-xl font-bold text-white">CA Firm Manager</span>
+          <span className="text-xl font-bold text-white">Praxida</span>
         </div>
 
         <div className="space-y-6">
@@ -30,7 +30,7 @@ export default function AuthLayout({
         </div>
 
         <p className="text-[var(--color-sidebar-text)] text-sm">
-          © {new Date().getFullYear()} CA Firm Manager. All rights reserved.
+          © {new Date().getFullYear()} Praxida. All rights reserved.
         </p>
       </div>
 
@@ -43,7 +43,7 @@ export default function AuthLayout({
               <Clock className="h-5 w-5 text-white" />
             </div>
             <span className="text-xl font-bold text-[var(--color-text)]">
-              CA Firm Manager
+              Praxida
             </span>
           </div>
           {children}

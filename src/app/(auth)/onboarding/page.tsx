@@ -61,7 +61,7 @@ function OnboardingError({ message }: { message: string }) {
             <Building2 className="h-5 w-5 text-[var(--color-accent-foreground)]" />
           </div>
           <span className="text-xl font-bold text-[var(--color-text)]">
-            CA Firm Manager
+            Praxida
           </span>
         </div>
 

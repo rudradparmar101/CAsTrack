@@ -43,7 +43,7 @@ export function Topbar({ profile, onMenuClick }: TopbarProps) {
           <Clock className="h-4 w-4 text-[var(--color-accent-foreground)]" />
         </div>
         <span className="hidden sm:block text-base font-semibold text-[var(--color-text)]">
-          CA Firm Manager
+          Praxida
         </span>
       </Link>
 

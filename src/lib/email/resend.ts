@@ -40,7 +40,7 @@ export async function sendEmail(params: {
   }
 
   const testRecipient = process.env.RESEND_TEST_RECIPIENT;
-  const from = process.env.RESEND_FROM_EMAIL || 'CA Firm Manager <onboarding@resend.dev>';
+  const from = process.env.RESEND_FROM_EMAIL || 'Praxida <onboarding@resend.dev>';
   const redirected = !!testRecipient && testRecipient !== params.to;
   const to = testRecipient || params.to;
   const subject = redirected ? `[to: ${params.to}] ${params.subject}` : params.subject;

@@ -66,7 +66,7 @@ export default function SignupPage() {
                 What happens next?
               </p>
               <ol className="list-decimal list-inside space-y-1">
-                <li>Open the email from CA Firm Manager</li>
+                <li>Open the email from Praxida</li>
                 <li>Click the &quot;Confirm your email&quot; link</li>
                 <li>You&apos;ll be automatically signed in</li>
               </ol>
@@ -107,7 +107,7 @@ export default function SignupPage() {
         Create your account
       </h2>
       <p className="text-[var(--color-text-secondary)] mb-6">
-        Get started with CA Firm Manager in minutes.
+        Get started with Praxida in minutes.
       </p>
 
       {/* Mode Toggle */}

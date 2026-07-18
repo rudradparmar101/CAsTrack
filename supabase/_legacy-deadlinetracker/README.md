@@ -1,6 +1,6 @@
 # Legacy DeadlineTracker artifacts — reference only, DO NOT APPLY
 
-This directory holds the **original DeadlineTracker** schema, migrations, cron job, and edge function — the codebase this project was forked from before the CA Firm Manager rewrite (see `REFERENCE_ARCHITECTURE.md` at the repo root for the full original architecture writeup).
+This directory holds the **original DeadlineTracker** schema, migrations, cron job, and edge function — the codebase this project was forked from before the Praxida rewrite (see `REFERENCE_ARCHITECTURE.md` at the repo root for the full original architecture writeup).
 
 None of this reflects the current data model. The live database is defined entirely by `supabase/ca-firm/schema.sql` and `supabase/ca-firm/ROLES_AND_RLS.md` — that is the only schema source of truth for this project.
 

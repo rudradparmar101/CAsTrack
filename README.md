@@ -1,6 +1,6 @@
-# DeadlineTracker
+# Praxida
 
-DeadlineTracker is a multi-tenant B2B SaaS application designed specifically for accounting firms and professional services teams to manage client deliverables, track critical deadlines, and organize team workflows. 
+Praxida is a multi-tenant B2B SaaS application designed specifically for accounting firms and professional services teams to manage client deliverables, track critical deadlines, and organize team workflows. 
 
 ## 🚀 Key Features
 

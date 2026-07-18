@@ -1,4 +1,4 @@
-# CA Firm Manager — Scope Decision (2026-07-16)
+# Praxida — Scope Decision (2026-07-16)
 
 ## Context
 Competitive scan of Indian CA practice-management SaaS (QwikCA, ATOM by Vider,

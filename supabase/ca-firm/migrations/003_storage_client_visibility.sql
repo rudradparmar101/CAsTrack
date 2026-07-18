@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Migration 003 — Storage client-visibility fix (portal-isolation finding #7)
--- Target: the LIVE CA Firm Manager Supabase project (fwmmdyebvzncpezdwnxm).
+-- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
 -- STATUS: Applied 2026-07-16 — applied live to project fwmmdyebvzncpezdwnxm,
 --         verified in force via pg_policies. Folded into schema.sql alongside
 --         this file (same convention as migrations 001/002).

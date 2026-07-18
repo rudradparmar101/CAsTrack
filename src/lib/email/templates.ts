@@ -22,7 +22,7 @@ function layout(params: {
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
             <tr>
               <td style="background-color:#0f766e;padding:20px 28px;">
-                <span style="color:#ffffff;font-size:16px;font-weight:700;">${firmName || 'CA Firm Manager'}</span>
+                <span style="color:#ffffff;font-size:16px;font-weight:700;">${firmName || 'Praxida'}</span>
               </td>
             </tr>
             <tr>
@@ -63,7 +63,7 @@ export function notificationEmail(params: {
     heading: params.title,
     bodyHtml: `<p style="margin:0;">${params.message}</p>`,
     ctaUrl: params.ctaUrl,
-    ctaLabel: 'Open in CA Firm Manager',
+    ctaLabel: 'Open in Praxida',
     firmName: params.firmName,
   });
 }

@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CA Firm Manager — Never Miss a Client Deadline",
+  title: "Praxida — Never Miss a Client Deadline",
   description:
     "A simple, fast tool for CA firms to track client deadlines, assign tasks, and keep your team on schedule.",
 };

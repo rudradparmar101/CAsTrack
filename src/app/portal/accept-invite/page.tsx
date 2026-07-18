@@ -83,7 +83,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
             <Building2 className="h-5 w-5 text-[var(--color-accent-foreground)]" />
           </div>
           <span className="text-xl font-bold text-[var(--color-text)]">
-            CA Firm Manager
+            Praxida
           </span>
         </div>
         <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 shadow-sm animate-fade-in">

@@ -22,7 +22,7 @@ export default function LandingPage() {
                 <Clock className="h-4.5 w-4.5 text-[var(--color-accent-foreground)]" />
               </div>
               <span className="text-lg font-bold text-[var(--color-text)]">
-                CA Firm Manager
+                Praxida
               </span>
             </div>
             <div className="flex items-center gap-3">
@@ -88,7 +88,7 @@ export default function LandingPage() {
               Everything your firm needs
             </h2>
             <p className="mt-4 text-lg text-[var(--color-text-secondary)] max-w-2xl mx-auto">
-              Focus on your clients, not on chasing deadlines. CA Firm Manager
+              Focus on your clients, not on chasing deadlines. Praxida
               keeps your entire team aligned.
             </p>
           </div>
@@ -150,7 +150,7 @@ export default function LandingPage() {
                 Ready to stop missing deadlines?
               </h2>
               <p className="mt-4 text-lg text-[var(--color-sidebar-text)] max-w-xl mx-auto">
-                Join firms already using CA Firm Manager to keep their teams organized and clients happy.
+                Join firms already using Praxida to keep their teams organized and clients happy.
               </p>
               <div className="mt-8">
                 <Link
@@ -175,11 +175,11 @@ export default function LandingPage() {
                 <Clock className="h-3.5 w-3.5 text-[var(--color-accent-foreground)]" />
               </div>
               <span className="text-sm font-semibold text-[var(--color-text)]">
-                CA Firm Manager
+                Praxida
               </span>
             </div>
             <p className="text-sm text-[var(--color-text-muted)]">
-              © {new Date().getFullYear()} CA Firm Manager. All rights reserved.
+              © {new Date().getFullYear()} Praxida. All rights reserved.
             </p>
           </div>
         </div>

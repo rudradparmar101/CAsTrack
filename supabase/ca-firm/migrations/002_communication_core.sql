@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Migration 002 — Communication core (Phase 11)
--- Target: the LIVE CA Firm Manager Supabase project (fwmmdyebvzncpezdwnxm).
+-- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
 -- Applied 2026-07-11 by Jay via the Supabase SQL editor; read-only verified
 -- immediately after (checklist_items exists/writable, get_client_assigned_
 -- contact() callable) and folded into schema.sql — this file is kept as the

@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Migration 001 — CA compliance core (Phase 9)
--- Target: the LIVE CA Firm Manager Supabase project (fwmmdyebvzncpezdwnxm).
+-- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
 -- This is the DELTA to apply to the running database. `supabase/ca-firm/
 -- schema.sql` has already been updated in place to fold these changes into
 -- the greenfield source of truth for any FUTURE fresh project — do not run
