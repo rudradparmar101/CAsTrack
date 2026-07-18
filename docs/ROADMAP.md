@@ -74,6 +74,13 @@ Onboard one friendly firm (lined up during Ph9–10). Collect feedback. Feedback
 - [ ] Migration 002 (same ⚠ HUMAN approval gate as Ph9): fee_masters (client × service, amount, periodicity); firm_invoices + line items (firm→client, GST fields, SAC 9982, per-firm-FY numbering); receipts (mode, TDS u/s 194J deducted); outstanding view; fees_hold flag on clients.
 - [ ] UI: invoice create + portal-visible/email delivery, receipts entry, per-client + firm-wide outstanding ledger, fees-hold banner on tasks/grid.
 
+## Phase 12.4 — Dashboard stat drill-through [ ]
+Low-effort/high-daily-value: the underlying lists (tasks, filing grid, outstanding ledger) already exist as filtered views, so this is mostly routing existing stats to existing destinations.
+- [ ] Dashboard summary stats become click-through: clicking a stat navigates to the corresponding filtered list view, not a new screen.
+- [ ] Targets (wire existing routes/filtered views, do not build new list screens): task stats (e.g. pending / overdue / in-review) -> tasks list, pre-filtered to that status; filing stats -> filing-status grid, pre-filtered; billing stats (added by Phase 12): outstanding -> unpaid/partially_paid invoices, overdue -> client_outstanding rows past due.
+- [ ] Client-portal dashboard stats drill through the same way, but only ever to that client's own already-permitted views (no new data exposure — reuse the existing RLS-gated / definer-view read paths).
+- [ ] Explicitly out of scope: new aggregations, new endpoints, charts, or any widening of what a role can see. This is navigation wiring over existing filtered views only.
+
 ## Phase 12.5 — Statutory identifiers & migration on-ramp [ ]
 - [ ] ARN/acknowledgment number capture on filing outcomes; nullable field on the
       outcome record; surfaced in filing-status grid; visible_to_client gated in portal
