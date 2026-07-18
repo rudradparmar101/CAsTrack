@@ -34,7 +34,7 @@
 //   reason. Do not "simplify" the approve-after-versioning step away.
 // ────────────────────────────────────────────────────────────────────────────
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
