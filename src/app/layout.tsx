@@ -30,6 +30,19 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${sans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* Runs before hydration so first paint already has the right theme
+           class — without this, SSR always ships the light class and the
+           dark-mode fix-up only lands after ThemeProvider's effect runs,
+           producing a visible light-then-dark flash on any hard navigation
+           (e.g. landing on /login after sign-out) even though client-side
+           navigation within an already-hydrated app never shows it. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('dt-theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.classList.add('dark');}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">
         <ThemeProvider>{children}</ThemeProvider>
       </body>
