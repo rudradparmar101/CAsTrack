@@ -470,17 +470,21 @@ CREATE TABLE public.firm_invoice_counters (
   PRIMARY KEY (firm_id, financial_year)
 );
 
--- Manual payment entry (Razorpay is Phase 15 by decision). Every receipt
--- allocates to exactly ONE invoice — an unallocated "on-account" receipt
--- would be invisible to client_outstanding and overstate receivables, so
--- on-account is deferred pending pilot demand (Phase 12 review finding 2).
--- A single cheque covering several invoices is entered as several rows
--- sharing reference_no.
+-- Manual payment entry (Razorpay is Phase 15 by decision). invoice_id is
+-- nullable: NULL = "on-account" receipt, not yet allocated to any invoice
+-- (migration 006, Phase 12 review finding 2 — originally NOT NULL and
+-- deferred pending pilot demand; reflected in client_outstanding as
+-- on_account_credit, netted into outstanding). A single cheque covering
+-- several invoices is entered as several rows sharing reference_no.
+-- Every mutation is logged by the log_receipt_change() trigger (§9.6) into
+-- receipt_history — receipts stay billing.manage-mutable (not made
+-- immutable; see migration 006's header for why), but every INSERT/UPDATE/
+-- DELETE now leaves an audit trail (migration 006, review finding 3).
 CREATE TABLE public.receipts (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   firm_id      UUID NOT NULL REFERENCES public.firms(id) ON DELETE CASCADE,
   client_id    UUID NOT NULL REFERENCES public.clients(id) ON DELETE RESTRICT,
-  invoice_id   UUID NOT NULL REFERENCES public.firm_invoices(id) ON DELETE RESTRICT,
+  invoice_id   UUID REFERENCES public.firm_invoices(id) ON DELETE RESTRICT, -- NULL = on-account (migration 006)
   receipt_date DATE NOT NULL DEFAULT CURRENT_DATE,
   amount       NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (amount >= 0),      -- money actually received
   tds_amount   NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (tds_amount >= 0),  -- TDS u/s 194J deducted by the client
@@ -496,6 +500,28 @@ CREATE TABLE public.receipts (
 CREATE INDEX idx_receipts_firm    ON public.receipts(firm_id);
 CREATE INDEX idx_receipts_client  ON public.receipts(client_id);
 CREATE INDEX idx_receipts_invoice ON public.receipts(invoice_id);
+
+-- Trigger-only audit trail for every receipts mutation (migration 006,
+-- review finding 3). Same pattern as task_stage_history: RLS enabled, no
+-- INSERT/UPDATE/DELETE policy at all (direct writes denied by RLS
+-- default-deny), the SECURITY DEFINER trigger function (§9.6) is the only
+-- writer. Not FK'd to receipts — a DELETE's history row must outlive the
+-- receipt it describes.
+CREATE TABLE public.receipt_history (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  firm_id    UUID NOT NULL REFERENCES public.firms(id) ON DELETE CASCADE,
+  receipt_id UUID NOT NULL,
+  operation  TEXT NOT NULL CHECK (operation IN ('insert', 'update', 'delete')),
+  client_id  UUID NOT NULL,
+  invoice_id UUID,
+  old_data   JSONB, -- NULL for insert
+  new_data   JSONB, -- NULL for delete
+  changed_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_receipt_history_receipt ON public.receipt_history(receipt_id);
+CREATE INDEX idx_receipt_history_firm    ON public.receipt_history(firm_id, client_id);
 
 -- ============================================================================
 -- 6. WORK TABLES (tasks, documents, comments, activity, notifications)
@@ -744,6 +770,13 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 -- Granular permission resolution:
 --   super_admin -> true; partner -> true; client_user -> false;
 --   employee -> per-user override, else role default, else false.
+-- billing.manage implies billing.view (migration 006, Phase 12 review
+-- finding 4): issue_firm_invoice() is SECURITY INVOKER and opens with
+-- SELECT ... FOR UPDATE, which needs the firm_invoices SELECT policy
+-- (billing.view). Checked BEFORE the user_permissions override lookup below
+-- so an explicit billing.view=false override cannot defeat a billing.manage
+-- grant — this is a functional dependency (the RPC literally cannot work
+-- without it), not a revocable policy preference.
 CREATE OR REPLACE FUNCTION public.has_permission(p_key TEXT)
 RETURNS BOOLEAN AS $$
 DECLARE
@@ -754,6 +787,10 @@ BEGIN
   v_role := public.get_user_role();
   IF v_role = 'partner' THEN RETURN true; END IF;
   IF v_role IS DISTINCT FROM 'employee' THEN RETURN false; END IF;
+
+  IF p_key = 'billing.view' AND public.has_permission('billing.manage') THEN
+    RETURN true;
+  END IF;
 
   SELECT granted INTO v_override
   FROM public.user_permissions
@@ -1246,11 +1283,17 @@ CREATE TRIGGER guard_invoice_items_frozen
 
 -- A receipt must reference a live (issued-family) invoice of the SAME
 -- client and firm — the doc↔task cross-client gap is not repeated here.
+-- invoice_id IS NULL (on-account, migration 006) skips this entirely: there
+-- is nothing to validate against.
 CREATE OR REPLACE FUNCTION public.guard_receipt()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_inv public.firm_invoices%ROWTYPE;
 BEGIN
+  IF NEW.invoice_id IS NULL THEN
+    RETURN NEW; -- on-account: unallocated, nothing to validate against (migration 006)
+  END IF;
+
   SELECT * INTO v_inv FROM public.firm_invoices WHERE id = NEW.invoice_id;
   IF v_inv.id IS NULL THEN
     RAISE EXCEPTION 'Receipt references a nonexistent invoice';
@@ -1268,6 +1311,34 @@ $$;
 CREATE TRIGGER guard_receipt
   BEFORE INSERT OR UPDATE ON public.receipts
   FOR EACH ROW EXECUTE FUNCTION public.guard_receipt();
+
+-- Trigger-only audit trail writer for receipt_history (migration 006,
+-- review finding 3). Logs every INSERT/UPDATE/DELETE with a before/after
+-- JSONB snapshot; receipt_history has no INSERT policy, so this is the
+-- only writer.
+CREATE OR REPLACE FUNCTION public.log_receipt_change()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO public.receipt_history (firm_id, receipt_id, operation, client_id, invoice_id, old_data, new_data, changed_by)
+    VALUES (NEW.firm_id, NEW.id, 'insert', NEW.client_id, NEW.invoice_id, NULL, to_jsonb(NEW), auth.uid());
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    INSERT INTO public.receipt_history (firm_id, receipt_id, operation, client_id, invoice_id, old_data, new_data, changed_by)
+    VALUES (NEW.firm_id, NEW.id, 'update', NEW.client_id, NEW.invoice_id, to_jsonb(OLD), to_jsonb(NEW), auth.uid());
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO public.receipt_history (firm_id, receipt_id, operation, client_id, invoice_id, old_data, new_data, changed_by)
+    VALUES (OLD.firm_id, OLD.id, 'delete', OLD.client_id, OLD.invoice_id, to_jsonb(OLD), NULL, auth.uid());
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER log_receipt_mutation
+  AFTER INSERT OR UPDATE OR DELETE ON public.receipts
+  FOR EACH ROW EXECUTE FUNCTION public.log_receipt_change();
 
 -- Recompute the affected invoice(s)' settlement columns and derive status
 -- (issued ⇄ partially_paid ⇄ paid). SECURITY DEFINER — same denormalization-
@@ -1294,14 +1365,18 @@ BEGIN
 END;
 $$;
 
+-- invoice_id IS NULL (on-account, migration 006) is skipped in both
+-- directions — there is no invoice to settle.
 CREATE OR REPLACE FUNCTION public.handle_receipt_change()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
-  IF TG_OP IN ('INSERT', 'UPDATE') THEN
+  IF TG_OP IN ('INSERT', 'UPDATE') AND NEW.invoice_id IS NOT NULL THEN
     PERFORM public.apply_receipts_to_invoice(NEW.invoice_id);
   END IF;
-  IF TG_OP = 'DELETE'
-     OR (TG_OP = 'UPDATE' AND OLD.invoice_id IS DISTINCT FROM NEW.invoice_id) THEN
+  -- OLD is only ever referenced when TG_OP is DELETE or UPDATE (it is
+  -- unassigned, not merely NULL, on INSERT).
+  IF (TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND OLD.invoice_id IS DISTINCT FROM NEW.invoice_id))
+     AND OLD.invoice_id IS NOT NULL THEN
     PERFORM public.apply_receipts_to_invoice(OLD.invoice_id);
   END IF;
   RETURN COALESCE(NEW, OLD);
@@ -1382,32 +1457,65 @@ $$;
 GRANT EXECUTE ON FUNCTION public.issue_firm_invoice(UUID, DATE) TO authenticated;
 
 -- client_outstanding — per-client receivables with aged buckets
--- (by due_date, falling back to invoice_date). security_invoker: the
--- caller's RLS on firm_invoices applies — staff-only in practice
--- (billing.view); client_users have no policy on firm_invoices and get
--- nothing here, by design.
+-- (by due_date, falling back to invoice_date), netted against on-account
+-- credit (migration 006, Phase 12 review finding 2). security_invoker: the
+-- caller's RLS on firm_invoices AND receipts applies — staff-only in
+-- practice (billing.view); client_users have no policy on either table and
+-- get nothing here, by design. Aged buckets stay invoice-only — on-account
+-- money isn't attached to any one invoice's due date — but on_account_credit
+-- is exposed as its own column and netted into the top-level `outstanding`.
+-- A FULL OUTER JOIN so a client with ONLY on-account receipts (no open
+-- invoice at all) still appears, with a negative outstanding (a credit).
 CREATE VIEW public.client_outstanding
 WITH (security_invoker = true) AS
+WITH invoice_agg AS (
+  SELECT
+    i.firm_id,
+    i.client_id,
+    COUNT(*)                                                        AS open_invoice_count,
+    SUM(i.total_amount - i.amount_received - i.tds_received)        AS invoice_outstanding,
+    SUM(i.total_amount)                                             AS total_billed,
+    SUM(i.amount_received)                                          AS total_received,
+    SUM(i.tds_received)                                             AS total_tds,
+    MIN(COALESCE(i.due_date, i.invoice_date))                       AS oldest_due_date,
+    SUM(CASE WHEN CURRENT_DATE - COALESCE(i.due_date, i.invoice_date) <= 30
+         THEN i.total_amount - i.amount_received - i.tds_received ELSE 0 END) AS bucket_0_30,
+    SUM(CASE WHEN CURRENT_DATE - COALESCE(i.due_date, i.invoice_date) BETWEEN 31 AND 60
+         THEN i.total_amount - i.amount_received - i.tds_received ELSE 0 END) AS bucket_31_60,
+    SUM(CASE WHEN CURRENT_DATE - COALESCE(i.due_date, i.invoice_date) BETWEEN 61 AND 90
+         THEN i.total_amount - i.amount_received - i.tds_received ELSE 0 END) AS bucket_61_90,
+    SUM(CASE WHEN CURRENT_DATE - COALESCE(i.due_date, i.invoice_date) > 90
+         THEN i.total_amount - i.amount_received - i.tds_received ELSE 0 END) AS bucket_90_plus
+  FROM public.firm_invoices i
+  WHERE i.status IN ('issued', 'partially_paid')
+  GROUP BY i.firm_id, i.client_id
+),
+on_account_agg AS (
+  SELECT
+    r.firm_id,
+    r.client_id,
+    SUM(r.amount + r.tds_amount) AS on_account_credit
+  FROM public.receipts r
+  WHERE r.invoice_id IS NULL
+  GROUP BY r.firm_id, r.client_id
+)
 SELECT
-  i.firm_id,
-  i.client_id,
-  COUNT(*)                                                        AS open_invoice_count,
-  SUM(i.total_amount - i.amount_received - i.tds_received)        AS outstanding,
-  SUM(i.total_amount)                                             AS total_billed,
-  SUM(i.amount_received)                                          AS total_received,
-  SUM(i.tds_received)                                             AS total_tds,
-  MIN(COALESCE(i.due_date, i.invoice_date))                       AS oldest_due_date,
-  SUM(CASE WHEN CURRENT_DATE - COALESCE(i.due_date, i.invoice_date) <= 30
-       THEN i.total_amount - i.amount_received - i.tds_received ELSE 0 END) AS bucket_0_30,
-  SUM(CASE WHEN CURRENT_DATE - COALESCE(i.due_date, i.invoice_date) BETWEEN 31 AND 60
-       THEN i.total_amount - i.amount_received - i.tds_received ELSE 0 END) AS bucket_31_60,
-  SUM(CASE WHEN CURRENT_DATE - COALESCE(i.due_date, i.invoice_date) BETWEEN 61 AND 90
-       THEN i.total_amount - i.amount_received - i.tds_received ELSE 0 END) AS bucket_61_90,
-  SUM(CASE WHEN CURRENT_DATE - COALESCE(i.due_date, i.invoice_date) > 90
-       THEN i.total_amount - i.amount_received - i.tds_received ELSE 0 END) AS bucket_90_plus
-FROM public.firm_invoices i
-WHERE i.status IN ('issued', 'partially_paid')
-GROUP BY i.firm_id, i.client_id;
+  COALESCE(ia.firm_id, oa.firm_id)                                           AS firm_id,
+  COALESCE(ia.client_id, oa.client_id)                                       AS client_id,
+  COALESCE(ia.open_invoice_count, 0)                                         AS open_invoice_count,
+  COALESCE(ia.invoice_outstanding, 0) - COALESCE(oa.on_account_credit, 0)    AS outstanding,
+  COALESCE(ia.total_billed, 0)                                               AS total_billed,
+  COALESCE(ia.total_received, 0)                                             AS total_received,
+  COALESCE(ia.total_tds, 0)                                                  AS total_tds,
+  COALESCE(oa.on_account_credit, 0)                                          AS on_account_credit,
+  ia.oldest_due_date                                                         AS oldest_due_date,
+  COALESCE(ia.bucket_0_30, 0)                                                AS bucket_0_30,
+  COALESCE(ia.bucket_31_60, 0)                                               AS bucket_31_60,
+  COALESCE(ia.bucket_61_90, 0)                                               AS bucket_61_90,
+  COALESCE(ia.bucket_90_plus, 0)                                             AS bucket_90_plus
+FROM invoice_agg ia
+FULL OUTER JOIN on_account_agg oa
+  ON ia.firm_id = oa.firm_id AND ia.client_id = oa.client_id;
 
 -- client_invoices / client_invoice_items — the ONLY read path for
 -- client_users (Phase 12 review finding 1). RLS is row-level, not
@@ -1564,6 +1672,7 @@ ALTER TABLE public.firm_invoices              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.firm_invoice_items         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.firm_invoice_counters      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.receipts                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.receipt_history            ENABLE ROW LEVEL SECURITY;
 
 -- ---------------------------------------------------------------------------
 -- 11.1 platform_admins
@@ -2453,6 +2562,17 @@ CREATE POLICY "Billing managers can update receipts"
 CREATE POLICY "Billing managers can delete receipts"
   ON public.receipts FOR DELETE TO authenticated
   USING (firm_id = public.get_user_firm_id() AND public.has_permission('billing.manage'));
+
+-- receipt_history (migration 006) — staff-only read via billing.view (same
+-- as receipts); no INSERT/UPDATE/DELETE policy at all — RLS default-denies
+-- every direct write, log_receipt_change() (§9.6) is the only writer.
+CREATE POLICY "Billing viewers can see receipt history"
+  ON public.receipt_history FOR SELECT TO authenticated
+  USING (firm_id = public.get_user_firm_id() AND public.has_permission('billing.view'));
+
+CREATE POLICY "Super admins can view all receipt history"
+  ON public.receipt_history FOR SELECT TO authenticated
+  USING (public.is_super_admin());
 
 -- ============================================================================
 -- 12. STORAGE POLICIES (bucket: 'client-documents')
