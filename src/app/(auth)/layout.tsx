@@ -1,5 +1,6 @@
 import React from 'react';
 import { Clock } from 'lucide-react';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 export default function AuthLayout({
   children,
@@ -7,7 +8,9 @@ export default function AuthLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex">
+    <div className="relative min-h-screen flex">
+      <ThemeToggle className="absolute top-4 right-4 z-10 bg-[var(--color-surface)] shadow-sm" />
+
       {/* Left — Branding Panel */}
       <div className="hidden lg:flex lg:w-1/2 bg-[var(--color-sidebar)] flex-col justify-between p-12">
         <div className="flex items-center gap-3">

@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { FileWarning, Building2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { AcceptInviteForm } from './accept-invite-form';
 
 /**
@@ -76,7 +77,8 @@ function InvalidInvite() {
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4">
+    <div className="relative min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4">
+      <ThemeToggle className="absolute top-4 right-4 z-10 bg-[var(--color-surface)] shadow-sm" />
       <div className="max-w-md w-full">
         <div className="flex items-center gap-3 mb-8 justify-center">
           <div className="h-10 w-10 rounded-xl bg-[var(--color-accent)] flex items-center justify-center">

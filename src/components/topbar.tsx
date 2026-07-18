@@ -1,21 +1,12 @@
 'use client';
 
-import React, { useSyncExternalStore } from 'react';
+import React from 'react';
 import Link from 'next/link';
-import { Menu, Moon, Sun, Clock } from 'lucide-react';
+import { Menu, Clock } from 'lucide-react';
 import type { Profile } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { NotificationBell } from '@/components/notification-bell';
-import { useTheme } from '@/components/theme-provider';
-
-const noopSubscribe = () => () => {};
-
-/** Server can't know a returning visitor's saved theme preference, so it
- *  always renders as light. useSyncExternalStore (not a setState-in-effect)
- *  is the React-sanctioned way to defer client-only values past hydration. */
-function useIsMounted() {
-  return useSyncExternalStore(noopSubscribe, () => true, () => false);
-}
+import { ThemeToggle } from '@/components/theme-toggle';
 
 interface TopbarProps {
   profile: Profile;
@@ -23,10 +14,6 @@ interface TopbarProps {
 }
 
 export function Topbar({ profile, onMenuClick }: TopbarProps) {
-  const { theme, toggleTheme } = useTheme();
-  const mounted = useIsMounted();
-  const isDark = mounted && theme === 'dark';
-
   return (
     <header className="sticky top-0 z-30 h-16 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center px-4 sm:px-6 gap-4">
       <button
@@ -50,18 +37,7 @@ export function Topbar({ profile, onMenuClick }: TopbarProps) {
       <div className="flex-1" />
 
       <div className="flex items-center gap-3">
-        <button
-          onClick={toggleTheme}
-          className="p-2 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-muted)] transition-colors focus-ring"
-          aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {isDark ? (
-            <Sun className="h-5 w-5" />
-          ) : (
-            <Moon className="h-5 w-5" />
-          )}
-        </button>
+        <ThemeToggle />
         <NotificationBell />
         <Badge variant={profile.role === 'partner' ? 'info' : 'default'}>
           {profile.role === 'partner' ? 'Partner' : 'Employee'}
