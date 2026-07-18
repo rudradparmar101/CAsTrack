@@ -5,6 +5,7 @@ interface CardProps {
   className?: string;
   padding?: 'none' | 'sm' | 'md' | 'lg';
   hover?: boolean;
+  onClick?: () => void;
 }
 
 const paddingClasses = {
@@ -19,13 +20,28 @@ export function Card({
   className = '',
   padding = 'md',
   hover = false,
+  onClick,
 }: CardProps) {
   return (
     <div
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
       className={`
         bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]
         shadow-[0_1px_3px_0_rgba(0,0,0,0.04)]
-        ${hover ? 'transition-shadow duration-200 hover:shadow-md' : ''}
+        ${hover || onClick ? 'transition-shadow duration-200 hover:shadow-md' : ''}
+        ${onClick ? 'cursor-pointer focus-ring' : ''}
         ${paddingClasses[padding]}
         ${className}
       `}

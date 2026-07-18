@@ -16,6 +16,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { TaskSummaryCard } from '@/components/task/task-summary-card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { TaskListModal } from './task-list-modal';
 import type { FirmTaskWithRefs, TaskPriority } from '@/lib/types';
 
 interface AdminDashboardProps {
@@ -31,6 +32,9 @@ const priorityConfig: Record<TaskPriority, { label: string; color: string; bg: s
 };
 
 export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
+  const [selectedClient, setSelectedClient] = React.useState<{ id: string; name: string } | null>(null);
+  const [selectedDepartment, setSelectedDepartment] = React.useState<{ id: string; name: string } | null>(null);
+
   const overdueTasks = tasks.filter((t) => {
     if (t.status === 'completed') return false;
     const due = new Date(t.due_date + 'T23:59:59');
@@ -65,12 +69,12 @@ export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
   const unassignedTasks = pendingTasks.filter((t) => !t.assigned_to);
 
   // Client workload (top 5 by pending tasks)
-  const clientMap = new Map<string, { name: string; pending: number; completed: number }>();
+  const clientMap = new Map<string, { id: string; name: string; pending: number; completed: number }>();
   for (const t of tasks) {
     const cName = t.client?.name || 'Unknown';
     const cId = t.client_id;
     if (!clientMap.has(cId)) {
-      clientMap.set(cId, { name: cName, pending: 0, completed: 0 });
+      clientMap.set(cId, { id: cId, name: cName, pending: 0, completed: 0 });
     }
     const entry = clientMap.get(cId)!;
     if (t.status === 'completed') entry.completed++;
@@ -179,7 +183,12 @@ export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
           {topClients.length > 0 ? (
             <div className="space-y-2.5">
               {topClients.map((client) => (
-                <div key={client.name} className="flex items-center justify-between">
+                <button
+                  key={client.id}
+                  type="button"
+                  onClick={() => setSelectedClient({ id: client.id, name: client.name })}
+                  className="flex items-center justify-between w-full text-left rounded-lg -mx-1.5 px-1.5 py-0.5 transition-colors hover:bg-[var(--color-muted)] focus-ring"
+                >
                   <span className="text-sm text-[var(--color-text)] truncate flex-1 mr-3">
                     {client.name}
                   </span>
@@ -191,7 +200,7 @@ export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
                       <Badge variant="success">{client.completed} done</Badge>
                     )}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           ) : (
@@ -209,9 +218,11 @@ export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {departmentWorkload.map((department) => (
-              <div
+              <button
                 key={department.id}
-                className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] px-4 py-3"
+                type="button"
+                onClick={() => setSelectedDepartment({ id: department.id, name: department.name })}
+                className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-muted)] focus-ring"
               >
                 <div className="h-9 w-9 rounded-lg bg-[var(--color-accent-muted)] text-[var(--color-accent)] flex items-center justify-center text-xs font-bold">
                   {department.name.slice(0, 2).toUpperCase()}
@@ -224,7 +235,7 @@ export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
                     <span className="text-xs text-[var(--color-success)]">{department.completed} done</span>
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </Card>
@@ -299,6 +310,20 @@ export function AdminDashboard({ tasks, departments }: AdminDashboardProps) {
           />
         </Card>
       )}
+
+      <TaskListModal
+        open={selectedClient !== null}
+        onClose={() => setSelectedClient(null)}
+        title={selectedClient ? `${selectedClient.name} — Tasks` : ''}
+        tasks={selectedClient ? tasks.filter((t) => t.client_id === selectedClient.id) : []}
+      />
+
+      <TaskListModal
+        open={selectedDepartment !== null}
+        onClose={() => setSelectedDepartment(null)}
+        title={selectedDepartment ? `${selectedDepartment.name} — Tasks` : ''}
+        tasks={selectedDepartment ? tasks.filter((t) => t.department_id === selectedDepartment.id) : []}
+      />
     </div>
   );
 }
