@@ -66,8 +66,20 @@ export async function updateSession(request: NextRequest) {
   // redirect below, which would otherwise send every unauthenticated request
   // (including Vercel Cron's) to /login before the route handler runs.
   const isApiRoute = pathname.startsWith('/api/');
+  // /forgot-password and /reset-password are deliberately NOT isAuthPage:
+  // isAuthPage force-redirects an authenticated user away (to /dashboard or
+  // /portal), which would be wrong for /reset-password — the whole point is
+  // that /auth/confirm establishes a short-lived (recovery) session there
+  // before the user has set a new password. isPublicPage triggers neither
+  // the unauthenticated-redirect-to-login guard nor that role-redirect.
+  const isPasswordResetPage =
+    pathname.startsWith('/forgot-password') || pathname.startsWith('/reset-password');
   const isPublicPage =
-    pathname === '/' || pathname.startsWith('/auth') || isAcceptInvitePage || isApiRoute;
+    pathname === '/' ||
+    pathname.startsWith('/auth') ||
+    isAcceptInvitePage ||
+    isApiRoute ||
+    isPasswordResetPage;
 
   // Auth guard: redirect unauthenticated users to login
   if (!user && !isAuthPage && !isPublicPage && !isOnboardingPage) {

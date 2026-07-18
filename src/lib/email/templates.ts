@@ -130,6 +130,19 @@ export function invoiceIssuedEmail(params: {
   });
 }
 
+export function passwordResetEmail(params: {
+  resetUrl: string;
+}): string {
+  return layout({
+    preheader: 'Reset your Praxida password',
+    heading: 'Reset your password',
+    bodyHtml: `<p style="margin:0 0 12px;">We received a request to reset the password on your account. Use the button below to choose a new one.</p>
+      <p style="margin:0;color:#9aa0ac;font-size:13px;">If you didn't request this, you can safely ignore this email — your password won't be changed. This link expires soon and can only be used once.</p>`,
+    ctaUrl: params.resetUrl,
+    ctaLabel: 'Reset password',
+  });
+}
+
 export function waitingClientNagEmail(params: {
   clientName: string;
   firmName: string;

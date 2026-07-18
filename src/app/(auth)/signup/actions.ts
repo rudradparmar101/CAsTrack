@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { validatePassword } from '@/lib/auth/password-policy';
 
 export interface SignupResult {
   success: boolean;
@@ -31,8 +32,9 @@ export async function signupCreateFirmAction(formData: FormData): Promise<Signup
     return { success: false, error: 'All fields are required.' };
   }
 
-  if (password.length < 6) {
-    return { success: false, error: 'Password must be at least 6 characters.' };
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    return { success: false, error: passwordError };
   }
 
   const supabase = await createClient();
@@ -90,8 +92,9 @@ export async function signupJoinFirmAction(formData: FormData): Promise<SignupRe
     return { success: false, error: 'All fields are required.' };
   }
 
-  if (password.length < 6) {
-    return { success: false, error: 'Password must be at least 6 characters.' };
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    return { success: false, error: passwordError };
   }
 
   const supabase = await createClient();
