@@ -391,3 +391,54 @@ The app never issues writes against `client_invoices` — the portal only reads 
 ### 7.6 Architectural finding flagged for decision
 
 Closing this is an architectural choice, not a one-line patch, so per session rules **no fix was proposed or applied**. The decision is *how* to make the views read-only for `authenticated` — e.g. `REVOKE INSERT, UPDATE, DELETE ON` both views `FROM authenticated` (and audit Supabase default-privilege grants so new objects don't silently re-open it), and/or add `INSTEAD OF INSERT/UPDATE/DELETE` triggers that raise, and/or reconsider whether these should be `security_invoker` views paired with a curated column-limited client SELECT policy. That trade-off is the user's to make. No code, schema, or migration was modified this session; no production data was deleted.
+
+---
+
+## 8. Re-verification after migration 005 (2026-07-18) — §7's write-through CLOSED; ON DELETE CASCADE regression found
+
+> **Date:** 2026-07-18
+> **Type:** Testing-only session. Migration 005 was reported applied to the live project (`fwmmdyebvzncpezdwnxm`). No code or schema was modified during this verification; the throwaway probe scripts written for the out-of-band checks (`_probe_005*.mjs`) were deleted after the run, per the committed-harness-only convention.
+> **Scope:** re-run of `scripts/verify/08-billing-rls.mjs` (committed, unchanged) plus three out-of-band probes (P1–P3, not in the committed suite) covering exactly the items the apply-migration prompt called out: the client DELETE path through the view, a direct RLS-bypassing DELETE against the new backstop trigger, and the `firms` → `firm_invoices` `ON DELETE CASCADE` interaction.
+
+### 8.1 Committed suite — 29/29 PASS, exit 0
+
+Full re-run of `08-billing-rls.mjs` against the live project: **29/29 PASS**, process exit code `0`. The two checks that were the point of migration 005 now pass, and every previously-passing check still passes (no regressions in the committed suite):
+
+| Check | §7 result | §8 result |
+|---|---|---|
+| **C12b** — U_A1 UPDATE own issued invoice `status='paid'` through `client_invoices` | FAIL (succeeded) | **PASS — DENIED** (`permission denied for view client_invoices`; DB `status` unchanged at `issued`) |
+| **C12c** — U_A1 UPDATE own invoice `amount_received` through the view | FAIL (succeeded) | **PASS — DENIED** (same view-permission error; DB `amount_received` unchanged at `0`) |
+| C1 / C1b (×6) — no direct base-table/view-bypass reads | PASS | PASS |
+| C6–C11, C13 — curated client read path (own non-draft only, no `internal_notes`/`cancellation_reason`, sibling/cross-firm isolation, draft hidden, RPC denied) | PASS | PASS (unchanged) |
+| C12a — client INSERT through the views denied | PASS | PASS |
+| S1–S5 — staff permission matrix (partner, no-perm employee, view-only, view+manage pairing) | PASS | PASS |
+| I1–I8 — money-path integrity (gapless concurrent issuing, draft-delete no gap, issued/line-item immutability, TDS 194J settlement, cancel-with-receipts rejection, cross-client receipt rejection, fresh-FY gapless audit) | PASS | PASS |
+
+No regression: staff (partner/`billing.view`/`billing.manage`) reads and writes, draft creation + issuing, receipt recording, and draft-invoice DELETE by `billing.manage` are all unchanged and still green.
+
+### 8.2 Out-of-band probes — P1/P2 PASS, **P3 FAILS (new finding)**
+
+The apply-migration prompt asked for three checks the committed suite doesn't cover. Probes were written fresh (a first pass had a seeding bug — a missing `clients.created_by` NOT NULL value caused the throwaway client insert to fail silently, which cascaded into a false pass; corrected before these results were taken):
+
+| Probe | Expected | Actual | Verdict |
+|---|---|---|---|
+| **P1** — U_A1 `DELETE` own issued invoice via `client_invoices` view | DENIED | `permission denied for view client_invoices`; row untouched | **PASS** |
+| **P2** — service-role (RLS-bypassing) direct `DELETE` on a non-draft `firm_invoices` row | REJECTED by `guard_firm_invoice_no_delete` | `Only draft invoices can be deleted — cancel a issued invoice instead`; row untouched | **PASS** |
+| **P3** — `firms` `DELETE` cascading to a non-draft `firm_invoices` row (fresh throwaway firm/client/invoice, invoice force-issued via service role) | Cascade succeeds; trigger does not block it | **The `firms` DELETE itself failed** with the same trigger error (`Only draft invoices can be deleted…`); neither the invoice nor the firm was removed | **FAIL** |
+
+P2 confirms the backstop trigger is a real, unconditional guard — it fires even for the service-role client, which bypasses RLS but not triggers, exactly as intended for an "issued invoices are never deleted" invariant. But that same unconditional firing is what breaks P3.
+
+### 8.3 Root cause of the P3 finding
+
+`ON DELETE CASCADE` is implemented by Postgres issuing a real, row-level `DELETE` against the child table (`firm_invoices`) as part of the parent (`firms`) delete — and that row-level `DELETE` fires `BEFORE DELETE` triggers exactly like any other `DELETE`, cascade-originated or not. `guard_firm_invoice_no_delete` (migration 005) has no exception for this: it checks `OLD.status <> 'draft'` unconditionally. So the instant a firm has even one non-draft (issued/partially_paid/paid/cancelled) invoice, `DELETE FROM firms WHERE id = ...` — cascade or direct — raises the trigger's exception and the **entire transaction is rolled back**: the firm is not deleted, the invoice is not deleted, nothing is removed.
+
+This is exactly the interaction the apply-migration prompt asked to verify ("Verify it does not interfere with ON DELETE CASCADE from firms") — and it does interfere. `firm_invoices.client_id` already uses `ON DELETE RESTRICT` (invoices are statutory records; clients aren't hard-deleted per project convention), but `firm_invoices.firm_id` uses `ON DELETE CASCADE` (`schema.sql` — `firm_id UUID NOT NULL REFERENCES public.firms(id) ON DELETE CASCADE`), on the assumption that deleting a firm should sweep all of its data. Migration 005's DELETE guard silently converts that cascade into a hard block for any firm with billing history.
+
+**Whether this is reachable today:** no in-app path hard-deletes a `firms` row (`project_context.md` documents `is_active`-style deactivation, never a firms DELETE, as the house convention for every tenant-scoped entity). So the gap is currently latent — the same "not reachable through the app, only through direct DB access" pattern as the original §7 finding, and the same pattern the §5/§6 storage work also went through. It would surface the moment any future path (an admin hard-delete tool, an account-closure script, GDPR-style erasure, manual cleanup in the SQL editor) tries to delete a firm that has ever issued a single invoice.
+
+### 8.4 Verdict
+
+- **§7's finding is CLOSED.** C12b/C12c now deny as required; P1 (the client-side DELETE variant) also denies. No regression anywhere in the 29-check committed suite or in P2.
+- **New architectural finding (P3):** `guard_firm_invoice_no_delete` has no carve-out for cascade-originated deletes, so it also blocks `firms` → `firm_invoices` `ON DELETE CASCADE` once any non-draft invoice exists — a firm with billing history can no longer be hard-deleted at all, through any path, cascade or direct.
+- Per session rules, **no fix is proposed here.** The trade-off (e.g., scoping the guard to only reject non-cascade deletes via `pg_trigger_depth()`/`TG_OP` context, vs. deciding firms should never be hard-deleted anyway and documenting that as intentional, vs. some other mechanism) is the user's to make.
+- **Cleanup:** the probe's throwaway firm/client/invoice (`99999999-0000-4000-8000-000000000008/…018/…028`) could not be removed by the probe itself — that's the finding in action — and remains live, tagged with the obviously-fake `99999999-…` UUID prefix used nowhere else in the schema, pending a decision on 8.3.

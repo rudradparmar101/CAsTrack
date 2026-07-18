@@ -105,7 +105,11 @@ Onboard one friendly firm (lined up during Ph9–10). Collect feedback. Feedback
 
 ## Phase 14 — Final RLS pass + committed policy tests [ ]
 - [ ] Re-review every policy vs finalized behavior: Ph3 documents INSERT relaxation; tasks.assign branch decision; doc↔task client-consistency trigger; stage-history note via session variable; all Ph9–13 tables. ⚠ migration gate for policy changes.
+- [ ] receipt mutation audit trail — receipts are DELETE/UPDATE-able by billing.manage with no history; consider trigger-only receipt_history. (Phase 12 review finding 3: cash receipts are a fraud surface; task_stage_history is the existing trigger-only-writable precedent.)
 - [ ] Idempotent policy-recreator script; expand rls-smoke.ts into a committed role-JWT suite covering the full matrix; wire as an npm script.
+- [ ] guard_firm_invoice frozen-column list omits status / amount_received / tds_received — a caller that bypasses RLS can corrupt settlement state; needs the session-variable pattern to allow only apply_receipts_to_invoice().
+- [ ] Supabase default privileges grant authenticated full DML on new public objects; PUBLIC != authenticated. Every CREATE VIEW and CREATE TABLE must explicitly REVOKE from authenticated, or rely on RLS. Audit all objects for this class of bug — 004's client views were the first instance (fixed in migration 005 for client_invoices/client_invoice_items/client_outstanding; other objects not yet audited).
+- [ ] firms ON DELETE CASCADE to firm_invoices is blocked by guard_firm_invoice_no_delete when any invoice is non-draft, so a firm with issued invoices cannot be hard-deleted through any path. This is desirable (statutory retention) but must be resolved deliberately: adopt firm soft-delete (mirroring the F6 client soft-delete pattern) as part of tenant lifecycle / Phase 15, so hard-delete and this cascade never occur. Until then, firm hard-deletion is effectively disabled for billing-active firms.
 
 ## Phase 15 — SaaS plumbing [ ]
 - [ ] Plan/seat/storage enforcement in server actions (existing DB helpers get_firm_plan / firm_has_feature / storage_used_bytes).
