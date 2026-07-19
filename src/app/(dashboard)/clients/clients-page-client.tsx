@@ -2,13 +2,15 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Plus, Users, Pencil, Archive, ArchiveRestore } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Plus, Upload, Users, Pencil, Archive, ArchiveRestore } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Modal } from '@/components/ui/modal';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ClientForm } from '@/components/client-form';
+import { ClientImportModal } from './client-import-modal';
 import {
   createClientAction,
   setClientActiveAction,
@@ -29,7 +31,9 @@ export function ClientsPageClient({
   initialHasMore,
   canManage,
 }: ClientsPageClientProps) {
+  const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [clientList, setClientList] = useState(clients);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -81,10 +85,16 @@ export function ClientsPageClient({
           </p>
         </div>
         {canManage && (
-          <Button onClick={() => setShowCreateModal(true)}>
-            <Plus className="h-4 w-4" />
-            Add Client
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => setShowImportModal(true)}>
+              <Upload className="h-4 w-4" />
+              Import Clients
+            </Button>
+            <Button onClick={() => setShowCreateModal(true)}>
+              <Plus className="h-4 w-4" />
+              Add Client
+            </Button>
+          </div>
         )}
       </div>
 
@@ -222,6 +232,19 @@ export function ClientsPageClient({
           action={createClientAction}
           onSuccess={() => setShowCreateModal(false)}
           onCancel={() => setShowCreateModal(false)}
+        />
+      </Modal>
+
+      {/* Bulk import (Phase 12.6) — core fields only, see client-import-modal.tsx */}
+      <Modal
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        title="Import Clients"
+        maxWidth="lg"
+      >
+        <ClientImportModal
+          onClose={() => setShowImportModal(false)}
+          onImported={() => router.refresh()}
         />
       </Modal>
     </div>
