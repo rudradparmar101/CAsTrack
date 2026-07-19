@@ -83,31 +83,45 @@ Low-effort/high-daily-value: the underlying lists (tasks, filing grid, outstandi
 - [ ] Client-portal dashboard stats drill through the same way, but only ever to that client's own already-permitted views (no new data exposure — reuse the existing RLS-gated / definer-view read paths).
 - [ ] Explicitly out of scope: new aggregations, new endpoints, charts, or any widening of what a role can see. This is navigation wiring over existing filtered views only.
 
-## Phase 12.5 — Statutory identifiers & migration on-ramp [~]
-**Progress note (2026-07-19):** session scoped to the ARN + UDIN items only (bulk client
-import explicitly excluded this session, per the runner prompt — one phase per session).
-Migration `007_udin_register_and_arn.sql` drafted (tasks.arn/tasks.filed_date columns +
-new udin_register table, RLS written at creation, mirrors receipts' SELECT/INSERT/UPDATE/
-DELETE shape) and folded into schema.sql — **⚠ HUMAN STOP: not yet applied**, awaiting
-Jay's review + manual application via the Supabase SQL editor, same gate as migrations
-001/002/004/005/006. A permission-gating decision was flagged rather than decided
-unilaterally: UDIN register reads reuse the existing `reports.view` (same as the filing
-grid); writes are proposed as PARTNER-ONLY at the RLS layer (no new permission key),
-mirroring Phase 10's statutory-generation precedent — alternative (a new
-`compliance.manage` key paired with `reports.view`) noted but not built. UI/action layer
-NOT started — waiting on migration application per the runner prompt's explicit gate.
-Resume here: once Jay confirms the migration is applied, build the UI/actions against it.
-- [ ] ARN/acknowledgment number capture on filing outcomes; nullable field on the
+## Phase 12.5 — Statutory identifiers: ARN + UDIN register [x]
+**Completed (2026-07-19):** Migration `007_udin_register_and_arn.sql` — ⚠ HUMAN gate
+observed (presented to Jay before any UI/action code was written, applied via the Supabase
+SQL editor, ran clean). Bulk client import was descoped from this phase entirely (not just
+deferred) — it needs no schema of its own and mixing it in would have violated
+one-phase-per-session; it now lives as its own **Phase 12.6** below, so this phase's
+checklist only ever covered ARN + UDIN.
+- [x] ARN/acknowledgment number capture on filing outcomes; nullable field on the
       outcome record; surfaced in filing-status grid; visible_to_client gated in portal
-      — migration drafted (`tasks.arn`/`tasks.filed_date`), UI not yet built.
-- [ ] UDIN register: capture only, NOT auto-generated. Fields: udin, document type,
+      — **decision: `tasks.arn`/`tasks.filed_date` real columns** (promoted out of
+      `task_activities`, same reasoning as migration 002's `checklist_items` — a
+      staff-only-readable audit table can't carry state a grid or client must read),
+      written atomically with the completion stage change alongside the pre-existing
+      `task_activities` entry. Surfaced on the filing grid + staff task detail; portal
+      display deliberately NOT built this phase (Jay's explicit scope call, not an RLS
+      limitation — see project_context.md §4.11).
+- [x] UDIN register: capture only, NOT auto-generated. Fields: udin, document type,
       client, date, signing partner, linked task/document. ICAI portal integration
-      is out of scope. — migration drafted (`udin_register` table + RLS), UI not yet built.
+      is out of scope. — new `udin_register` table + RLS (migration 007); `/udin`
+      (partner-only nav) list/create/edit. Permission gating was flagged as an explicit
+      either/or rather than decided unilaterally — Jay chose `reports.view` reads +
+      partner-only RLS writes, no new `compliance.manage` key. Staff-internal only, by
+      design: zero client_user access, RLS confirmed policy-by-policy with Jay before
+      the migration was applied, no `/portal` surface exists or is planned.
+- [x] Exit gate (adjusted — see descope note above): ARN + UDIN round-trip verified live
+      via Playwright (create/edit/complete through the real UI, ARN column vs.
+      task_activities entry explicitly checked for agreement, grid + task-detail
+      rendering, a `reports.view`-only account's read-only UI, two independent
+      raw-PostgREST RLS rejections on udin_register). `npm run build` + `npm run lint`
+      both clean throughout. The "import 50 dummy clients" half of the original exit
+      gate moves to Phase 12.6's own exit gate.
+
+## Phase 12.6 — Bulk client import [ ]
+Split out of Phase 12.5 (2026-07-19) — needs no schema of its own yet, so it wasn't
+blocked on migration 007, but building it in the same session would have violated the
+one-phase-per-session rule.
 - [ ] Bulk client import from Excel/CSV: service-role-only path, validates PAN/GSTIN
-      format, dry-run preview before commit, idempotent on PAN within firm — NOT started
-      this session (explicitly out of scope, see progress note above).
-- [ ] Exit gate: import 50 dummy clients, ARN + UDIN round-trip through UI and portal,
-      RLS smoke still 14/14
+      format, dry-run preview before commit, idempotent on PAN within firm
+- [ ] Exit gate: import 50 dummy clients, RLS smoke still 14/14
 
 ## Phase 13 — Registers + permissions UI [ ]
 - [ ] Credentials vault (⚠ migration gate): pgsodium/Supabase Vault server-side encryption; reveal only via a narrow server action gated by new vault.view/vault.manage permissions; audit-log table recording every reveal.
