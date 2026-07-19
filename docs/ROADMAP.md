@@ -125,6 +125,9 @@ Low-effort/high-daily-value: the underlying lists (tasks, filing grid, outstandi
 - [ ] ⚠ HUMAN: Razorpay account/keys. Webhooks → firm_subscriptions / subscription_invoices via service role.
 - [ ] Super-admin /admin surface (plans, firms, subscriptions; platform_admins-gated).
 
+## Off-roadmap completions (not tracked as a phase; logged for continuity)
+- **Branded forgot-password/reset-password flow (2026-07-18, commit `8e14708`; runtime-verified 2026-07-19).** `/forgot-password` + `/reset-password` + `/auth/confirm`, wired into `/login`, middleware-exempted as public-but-not-auth-page. Reuses Supabase's own recovery-token issuance/expiry, sends via the existing branded `sendEmail()` path instead of Supabase's mailer. No rate limiting (flagged, see project_context.md §6 item 9). Full detail: project_context.md §4.3.
+
 ## Deferred (post-pilot, promote to phases on demand)
 Full notices module (Ph9 category tag is the stopgap) · client groups · timesheets/attendance · GSP/Tally sync · UDIN/challan registers · WhatsApp Business API channel (Meta application + hook into the Ph11 channel-agnostic sender) — Jay's call: do last, if at all. Meta approval takes weeks — start the application that far ahead of wanting it live. · Dashboard card detail modals for the remaining cards: By Priority (admin dashboard) and all member/employee-dashboard stat cards (Pending/Overdue/Due Soon/Complete%) — Client Workload + Department Workload got theirs off-roadmap on 2026-07-19; the rest deliberately deferred, see project_context.md §4.6.
 
