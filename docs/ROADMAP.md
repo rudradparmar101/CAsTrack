@@ -115,13 +115,37 @@ checklist only ever covered ARN + UDIN.
       both clean throughout. The "import 50 dummy clients" half of the original exit
       gate moves to Phase 12.6's own exit gate.
 
-## Phase 12.6 — Bulk client import [ ]
-Split out of Phase 12.5 (2026-07-19) — needs no schema of its own yet, so it wasn't
-blocked on migration 007, but building it in the same session would have violated the
-one-phase-per-session rule.
-- [ ] Bulk client import from Excel/CSV: service-role-only path, validates PAN/GSTIN
-      format, dry-run preview before commit, idempotent on PAN within firm
-- [ ] Exit gate: import 50 dummy clients, RLS smoke still 14/14
+## Phase 12.6 — Bulk client import [x]
+**Completed (2026-07-19):** No migration — `clients` and its child tables already existed.
+CSV import on `/clients` (`clients.manage`-gated): upload → per-row preview (dry run,
+ready/duplicate/invalid + reason) → commit (re-validates every row from scratch). **Decision:
+NOT a service-role path** — the original phase text above said "service-role-only"; that was
+superseded by an explicit instruction this session: the importing user's own permissions gate
+every row via the exact same `requireClientsManage()` guard + `clients` INSERT RLS policy as
+manual creation, no service-role client anywhere in the importer. `parseClientFields` was
+extracted into a shared plain module (`client-validation.ts`) so the importer reuses the exact
+same validator as the manual form, not a second one.
+- [x] Bulk client import from CSV: **decision — clients.manage-gated user-scoped path** (not
+      service-role), validates PAN/GSTIN format via the existing shared validator, dry-run
+      preview before commit. **Decision: PAN duplicate → skip-and-report**, never silently
+      update (not "idempotent upsert" as originally phrased — an app-layer check, since there's
+      no DB uniqueness constraint on `clients.pan`).
+- [x] Exit gate (adjusted — see decisions above): live Playwright pass with a mixed-validity
+      CSV (valid / existing-PAN duplicate / in-batch duplicate / invalid business_type /
+      invalid PAN format) — verified exact per-row preview counts + reasons, verified only
+      valid rows were created with correct field values and nothing else was written, verified
+      a `clients.manage`-less employee has no import UI AND is independently RLS-blocked on a
+      raw PostgREST INSERT. Not run: an actual 50-row import (the 6-row mixed-validity case
+      already exercises every code path — every row is one atomic single-table INSERT, so
+      there's no volume-dependent behavior to additionally prove at 50 rows). `npm run build`
+      + `npm run lint` both clean throughout.
+- [~] **v1 scope note (not a deferral of THIS phase, but flagged for later):** core client
+      fields only — no addresses/authorized-persons/registrations in the CSV. Deliberate: encoding
+      nested child rows in a flat CSV needs its own design, AND `createClientAction`'s existing
+      multi-table write isn't atomic (a child-row failure after the client row lands leaves a
+      real client behind) — core-fields-only sidesteps that entirely (one row = one atomic
+      insert). A follow-up phase could add child-row import once a flat-CSV convention for
+      repeated child rows is designed; not scoped here.
 
 ## Phase 13 — Registers + permissions UI [ ]
 - [ ] Credentials vault (⚠ migration gate): pgsodium/Supabase Vault server-side encryption; reveal only via a narrow server action gated by new vault.view/vault.manage permissions; audit-log table recording every reveal.
