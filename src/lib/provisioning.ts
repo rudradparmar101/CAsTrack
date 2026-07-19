@@ -1,5 +1,6 @@
 import type { User } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { notifyTelegram } from '@/lib/notifyTelegram';
 
 /**
  * Profile/firm provisioning — the single source of truth for turning a
@@ -91,6 +92,12 @@ async function provisionCreateFirm(
     return { ok: false, reason: 'We could not create your firm. Please try again.' };
   }
 
+  const { count: firmCount } = await adminClient
+    .from('firms')
+    .select('id', { count: 'exact', head: true });
+  const countSuffix = typeof firmCount === 'number' ? ` — total firms: ${firmCount}` : '';
+  await notifyTelegram(`🎉 New firm: ${firmName} (id ${firm.id})${countSuffix}`);
+
   const { error: profileError } = await adminClient.from('profiles').insert({
     id: user.id,
     name,
@@ -159,6 +166,8 @@ async function provisionJoinFirm(
     console.error('Provisioning: employee profile creation error:', profileError);
     return { ok: false, reason: 'We could not finish setting up your account. Please try again.' };
   }
+
+  await notifyTelegram(`👋 ${name} joined firm: ${firm.firm_name} (id ${firm.firm_id})`);
 
   return { ok: true, homePath: '/dashboard' };
 }
