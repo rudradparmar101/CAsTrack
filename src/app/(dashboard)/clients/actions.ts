@@ -4,18 +4,16 @@ import { revalidatePath } from 'next/cache';
 import { getAuthProfile } from '@/lib/auth';
 import { CLIENTS_PAGE_SIZE } from '@/lib/pagination';
 import {
-  BUSINESS_TYPE_OPTIONS,
   ADDRESS_TYPE_OPTIONS,
   REGISTRATION_TYPE_OPTIONS,
   GST_SCHEME_OPTIONS,
-  AUDIT_TYPE_OPTIONS,
   GSTIN_RE,
   PAN_RE,
   TAN_RE,
-  CIN_RE,
   DIN_RE,
   PINCODE_RE,
 } from '@/lib/ca-options';
+import { parseClientFields, clientFieldsFromFormData } from './client-validation';
 import type {
   ActionResult,
   ActionResultWithData,
@@ -37,7 +35,7 @@ import type {
 
 // ---- shared guards & parsing -------------------------------------------------
 
-async function requireClientsManage(): Promise<
+export async function requireClientsManage(): Promise<
   | { ok: true; supabase: Awaited<ReturnType<typeof getAuthProfile>>['supabase']; userId: string; firmId: string }
   | { ok: false; error: string }
 > {
@@ -86,71 +84,10 @@ interface ParsedRegistration {
   is_active: boolean;
 }
 
-function opt(value: FormDataEntryValue | null): string | null {
-  const s = typeof value === 'string' ? value.trim() : '';
-  return s === '' ? null : s;
-}
-
-function optUpper(value: FormDataEntryValue | null): string | null {
-  const s = opt(value);
-  return s ? s.toUpperCase() : null;
-}
-
-/** Validates core client fields; returns friendly errors instead of letting
- *  the schema CHECK constraints bubble up as raw Postgres messages. */
-function parseClientFields(formData: FormData):
-  | { ok: true; values: Record<string, unknown> }
-  | { ok: false; error: string } {
-  const name = opt(formData.get('name'));
-  if (!name) return { ok: false, error: 'Client name is required.' };
-
-  const businessType = opt(formData.get('business_type'));
-  if (!businessType || !BUSINESS_TYPE_OPTIONS.some((o) => o.value === businessType)) {
-    return { ok: false, error: 'Please choose a valid business type.' };
-  }
-
-  const gstin = optUpper(formData.get('gstin'));
-  if (gstin && !GSTIN_RE.test(gstin)) {
-    return { ok: false, error: 'GSTIN format looks invalid (e.g., 27ABCDE1234F1Z5).' };
-  }
-  const pan = optUpper(formData.get('pan'));
-  if (pan && !PAN_RE.test(pan)) {
-    return { ok: false, error: 'PAN format looks invalid (e.g., ABCDE1234F).' };
-  }
-  const tan = optUpper(formData.get('tan'));
-  if (tan && !TAN_RE.test(tan)) {
-    return { ok: false, error: 'TAN format looks invalid (e.g., MUMA12345B).' };
-  }
-  const cin = optUpper(formData.get('cin'));
-  if (cin && !CIN_RE.test(cin)) {
-    return { ok: false, error: 'CIN format looks invalid (21 characters, starts with L or U).' };
-  }
-
-  const auditType = opt(formData.get('audit_type'));
-  if (auditType && !AUDIT_TYPE_OPTIONS.some((o) => o.value === auditType)) {
-    return { ok: false, error: 'Please choose a valid audit type.' };
-  }
-
-  return {
-    ok: true,
-    values: {
-      name,
-      trade_name: opt(formData.get('trade_name')),
-      business_type: businessType,
-      gstin,
-      pan,
-      tan,
-      cin,
-      incorporation_date: opt(formData.get('incorporation_date')),
-      gst_registration_date: opt(formData.get('gst_registration_date')),
-      is_audit_applicable: formData.get('is_audit_applicable') === 'true',
-      audit_type: formData.get('is_audit_applicable') === 'true' ? auditType : null,
-      email: opt(formData.get('email')),
-      phone: opt(formData.get('phone')),
-      notes: opt(formData.get('notes')),
-    },
-  };
-}
+// parseClientFields/clientFieldsFromFormData live in client-validation.ts —
+// a plain (non-'use server') module, since parseClientFields is a pure sync
+// function and this file's 'use server' directive requires every export to
+// be async. See that file for the shared-validator rationale.
 
 function parseAddresses(formData: FormData):
   | { ok: true; addresses: ParsedAddress[] }
@@ -325,7 +262,7 @@ export async function createClientAction(formData: FormData): Promise<ActionResu
   if (!guard.ok) return { success: false, error: guard.error };
   const { supabase, userId, firmId } = guard;
 
-  const fields = parseClientFields(formData);
+  const fields = parseClientFields(clientFieldsFromFormData(formData));
   if (!fields.ok) return { success: false, error: fields.error };
   const addressesResult = parseAddresses(formData);
   if (!addressesResult.ok) return { success: false, error: addressesResult.error };
@@ -398,7 +335,7 @@ export async function updateClientAction(formData: FormData): Promise<ActionResu
   const id = formData.get('id') as string;
   if (!id) return { success: false, error: 'Missing client id.' };
 
-  const fields = parseClientFields(formData);
+  const fields = parseClientFields(clientFieldsFromFormData(formData));
   if (!fields.ok) return { success: false, error: fields.error };
   const addressesResult = parseAddresses(formData);
   if (!addressesResult.ok) return { success: false, error: addressesResult.error };
