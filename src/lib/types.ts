@@ -604,3 +604,8 @@ export interface ClientInvoiceItem {
 export interface FirmInvoiceWithClient extends FirmInvoice {
   client: Pick<Client, 'id' | 'name' | 'trade_name'>;
 }
+
+export interface FeeMasterWithRefs extends FeeMaster {
+  client: Pick<Client, 'id' | 'name'> | null;
+  compliance_type: Pick<ComplianceType, 'id' | 'code' | 'name'> | null;
+}

@@ -32,6 +32,16 @@ async function requireBillingManage(): Promise<Guard> {
   return { ok: true, supabase, userId, firmId: profile.firm_id };
 }
 
+/** PostgREST returns PGRST116 when a write matched no row — with RLS in
+ *  play that means "you can see this row but cannot modify it" (same
+ *  mapping as tasks/actions.ts's rlsFriendly()). */
+function rlsFriendly(message?: string): string {
+  if (!message || message.includes('0 rows') || message.includes('multiple (or no) rows')) {
+    return 'You do not have permission to make this change.';
+  }
+  return message;
+}
+
 interface DraftItemInput {
   description: string;
   sac_code?: string;
@@ -226,5 +236,131 @@ export async function recordReceiptAction(input: {
 
   revalidatePath('/billing');
   revalidatePath(`/billing/${input.invoice_id}`);
+  return { success: true };
+}
+
+// ---- fee_masters (rate card) ----------------------------------------------
+// No hard delete anywhere in this module — mirrors the clients/departments/
+// compliance_types precedent; retire a rate via is_active instead.
+
+interface FeeMasterInput {
+  id?: string;
+  client_id: string | null;
+  service_name: string;
+  compliance_type_id: string | null;
+  amount: number;
+  periodicity: string;
+  notes: string | null;
+}
+
+function validateFeeMasterInput(input: FeeMasterInput): string | null {
+  if (!input.service_name?.trim()) return 'Service name is required.';
+  if (!(input.amount >= 0)) return 'Amount cannot be negative.';
+  if (!['one_time', 'monthly', 'quarterly', 'annual'].includes(input.periodicity)) {
+    return 'Please choose a valid periodicity.';
+  }
+  return null;
+}
+
+export async function createFeeMasterAction(input: FeeMasterInput): Promise<ActionResult> {
+  const guard = await requireBillingManage();
+  if (!guard.ok) return { success: false, error: guard.error };
+  const { supabase, firmId } = guard;
+
+  const validationError = validateFeeMasterInput(input);
+  if (validationError) return { success: false, error: validationError };
+
+  const { data, error } = await supabase
+    .from('fee_masters')
+    .insert({
+      firm_id: firmId,
+      client_id: input.client_id,
+      service_name: input.service_name.trim(),
+      compliance_type_id: input.compliance_type_id,
+      amount: input.amount,
+      periodicity: input.periodicity,
+      notes: input.notes?.trim() || null,
+    })
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    if (error?.code === '23505') {
+      return {
+        success: false,
+        error: input.client_id
+          ? 'This client already has a rate for that service.'
+          : 'The firm-wide rate card already has a rate for that service.',
+      };
+    }
+    return { success: false, error: rlsFriendly(error?.message) };
+  }
+
+  revalidatePath('/billing');
+  return { success: true };
+}
+
+export async function updateFeeMasterAction(input: FeeMasterInput): Promise<ActionResult> {
+  const guard = await requireBillingManage();
+  if (!guard.ok) return { success: false, error: guard.error };
+  const { supabase, firmId } = guard;
+
+  if (!input.id) return { success: false, error: 'Missing rate card row.' };
+
+  const validationError = validateFeeMasterInput(input);
+  if (validationError) return { success: false, error: validationError };
+
+  const { data, error } = await supabase
+    .from('fee_masters')
+    .update({
+      client_id: input.client_id,
+      service_name: input.service_name.trim(),
+      compliance_type_id: input.compliance_type_id,
+      amount: input.amount,
+      periodicity: input.periodicity,
+      notes: input.notes?.trim() || null,
+    })
+    .eq('id', input.id)
+    .eq('firm_id', firmId)
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    if (error?.code === '23505') {
+      return {
+        success: false,
+        error: input.client_id
+          ? 'This client already has a rate for that service.'
+          : 'The firm-wide rate card already has a rate for that service.',
+      };
+    }
+    return { success: false, error: rlsFriendly(error?.message) };
+  }
+
+  revalidatePath('/billing');
+  return { success: true };
+}
+
+export async function toggleFeeMasterActiveAction(
+  feeMasterId: string,
+  isActive: boolean
+): Promise<ActionResult> {
+  const guard = await requireBillingManage();
+  if (!guard.ok) return { success: false, error: guard.error };
+  const { supabase, firmId } = guard;
+
+  const { data, error } = await supabase
+    .from('fee_masters')
+    .update({ is_active: isActive })
+    .eq('id', feeMasterId)
+    .eq('firm_id', firmId)
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    return { success: false, error: rlsFriendly(error?.message) };
+  }
+
+  revalidatePath('/billing');
   return { success: true };
 }
