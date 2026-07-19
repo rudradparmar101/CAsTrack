@@ -1,6 +1,6 @@
 import React from 'react';
 import { format, isPast, isToday } from 'date-fns';
-import { Calendar, Landmark, Repeat, Info } from 'lucide-react';
+import { Calendar, Landmark, Repeat, Info, BadgeCheck } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { PriorityBadge } from '@/components/priority-badge';
 import type { FirmTaskDetail } from '@/lib/types';
@@ -50,6 +50,22 @@ export function TaskMetadata({ task }: TaskMetadataProps) {
           <div className="flex justify-between gap-3">
             <dt className="text-[var(--color-text-muted)]">Period</dt>
             <dd className="text-right text-[var(--color-text)]">{task.period_label}</dd>
+          </div>
+        )}
+        {(task.arn || task.filed_date) && (
+          <div className="flex justify-between gap-3">
+            <dt className="text-[var(--color-text-muted)] flex items-center gap-1.5">
+              <BadgeCheck className="h-3.5 w-3.5" />
+              Filing outcome
+            </dt>
+            <dd className="text-right text-[var(--color-text)]">
+              {task.arn && <span className="block font-mono text-xs">ARN {task.arn}</span>}
+              {task.filed_date && (
+                <span className="block text-[11px] text-[var(--color-text-muted)]">
+                  Filed {format(new Date(task.filed_date), 'MMM d, yyyy')}
+                </span>
+              )}
+            </dd>
           </div>
         )}
         <div className="flex justify-between gap-3 items-center">

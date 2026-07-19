@@ -318,6 +318,12 @@ export interface FirmTask {
   /** Per-task copy of the originating template's checklist (Phase 11) —
    *  copied once at creation, toggled by staff, visible to the client. */
   checklist_items: ChecklistItem[];
+  /** Structured filing outcome (Phase 12.5) — set alongside the existing
+   *  task_activities 'filing_outcome_recorded' audit entry, not instead of
+   *  it. Nullable; only ever set for source==='statutory' tasks at
+   *  completion. */
+  arn: string | null;
+  filed_date: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -608,4 +614,33 @@ export interface FirmInvoiceWithClient extends FirmInvoice {
 export interface FeeMasterWithRefs extends FeeMaster {
   client: Pick<Client, 'id' | 'name'> | null;
   compliance_type: Pick<ComplianceType, 'id' | 'code' | 'name'> | null;
+}
+
+// ============================================
+// UDIN register (Phase 12.5, migration 007) — staff-internal only, no
+// client_user read path (see migration 007's RLS: reads gated by
+// reports.view, writes partner-only via get_user_role(), no policy at all
+// for client_user).
+// ============================================
+
+export interface UdinRegisterEntry {
+  id: string;
+  firm_id: string;
+  client_id: string;
+  udin: string;
+  document_type: string;
+  generated_on: string;
+  signing_partner_id: string;
+  task_id: string | null;
+  document_id: string | null;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UdinRegisterEntryWithRefs extends UdinRegisterEntry {
+  client: Pick<Client, 'id' | 'name'> | null;
+  signing_partner: Pick<Profile, 'id' | 'name'> | null;
+  task: Pick<FirmTask, 'id' | 'title'> | null;
 }

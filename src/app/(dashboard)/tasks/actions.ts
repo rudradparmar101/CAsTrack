@@ -356,9 +356,27 @@ async function changeStageCore(
     }
   }
 
+  // Filing outcome (Phase 12.5, migration 007): ARN/filed_date are now real
+  // tasks columns (promoted out of task_activities, which is staff-only
+  // readable — see migration 007's header), written in the SAME update as
+  // the stage change so the column and the audit-trail activity entry below
+  // are derived from one atomic write, never two separately-timed writes
+  // that could drift apart.
+  const isFilingOutcomeUpdate =
+    toStage === 'completed' &&
+    task.source === 'statutory' &&
+    !!filingOutcome &&
+    !!(filingOutcome.arn || filingOutcome.filedDate);
+
+  const updatePayload: { stage: TaskStage; arn?: string; filed_date?: string } = { stage: toStage };
+  if (isFilingOutcomeUpdate) {
+    if (filingOutcome!.arn) updatePayload.arn = filingOutcome!.arn;
+    if (filingOutcome!.filedDate) updatePayload.filed_date = filingOutcome!.filedDate;
+  }
+
   const { data: updatedRow, error } = await supabase
     .from('tasks')
-    .update({ stage: toStage })
+    .update(updatePayload)
     .eq('id', taskId)
     .eq('firm_id', profile.firm_id)
     .select('id')
@@ -387,16 +405,11 @@ async function changeStageCore(
     newValue: { stage: stageLabel(toStage), ...(note ? { note } : {}) },
   });
 
-  // Filing outcome (Phase 10d): captured at completion for statutory tasks
-  // only, stored as its own immutable activity entry rather than a new
-  // tasks column (no schema change needed this phase). "Shown on task" =
-  // the activity feed; "shown on grid" = the grid links to the task itself.
-  if (
-    toStage === 'completed' &&
-    task.source === 'statutory' &&
-    filingOutcome &&
-    (filingOutcome.arn || filingOutcome.filedDate)
-  ) {
+  // Filing outcome (Phase 10d, columns added Phase 12.5/migration 007):
+  // task_activities keeps logging this as the audit trail (who/when) even
+  // though tasks.arn/filed_date (set above, same request) are now the
+  // display source of truth for the grid/task detail.
+  if (isFilingOutcomeUpdate) {
     await logTaskActivity({
       supabase,
       firmId: profile.firm_id,
@@ -404,8 +417,8 @@ async function changeStageCore(
       actorId: userId,
       action: 'filing_outcome_recorded',
       newValue: {
-        ...(filingOutcome.arn ? { arn: filingOutcome.arn } : {}),
-        ...(filingOutcome.filedDate ? { filed_date: filingOutcome.filedDate } : {}),
+        ...(filingOutcome!.arn ? { arn: filingOutcome!.arn } : {}),
+        ...(filingOutcome!.filedDate ? { filed_date: filingOutcome!.filedDate } : {}),
       },
     });
   }

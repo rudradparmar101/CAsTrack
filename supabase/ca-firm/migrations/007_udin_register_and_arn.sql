@@ -1,12 +1,12 @@
 -- ============================================================================
 -- Migration 007 — Phase 12.5 (partial): UDIN register + structured ARN
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- NOT YET APPLIED — present to Jay for approval first (same ⚠ HUMAN gate as
--- migrations 001/002/004/005/006), apply via the Supabase SQL editor,
--- read-only verify, then this header gets updated and the change gets
--- folded into schema.sql (schema.sql stays the greenfield source of truth
--- — already done in this commit, ahead of application, matching the
--- migration 006 precedent of drafting the fold-in before the ⚠ HUMAN gate).
+-- Applied 2026-07-19 by Jay via the Supabase SQL editor (ran clean, no
+-- errors); folded into schema.sql in the same commit that drafted this file.
+-- Before applying, the exact RLS policies below were walked through with Jay
+-- role-by-role to confirm client_user has no SELECT/INSERT/UPDATE/DELETE
+-- path on udin_register (see the session transcript) — no changes were
+-- needed as a result of that review.
 --
 -- Covers the first two thirds of docs/ROADMAP.md's Phase 12.5 ("Statutory
 -- identifiers & migration on-ramp"): ARN/acknowledgment-number capture and

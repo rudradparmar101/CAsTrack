@@ -68,14 +68,14 @@ export default async function CompliancePage() {
   const { data: statutoryTasks } = types.length
     ? await supabase
         .from('tasks')
-        .select('id, client_id, compliance_type_id, period_key, stage')
+        .select('id, client_id, compliance_type_id, period_key, stage, arn')
         .eq('source', 'statutory')
         .in('compliance_type_id', types.map((t) => t.id))
     : { data: [] };
 
-  const taskByKey = new Map<string, { id: string; stage: TaskStage }>();
-  for (const t of (statutoryTasks as { id: string; client_id: string; compliance_type_id: string; period_key: string; stage: TaskStage }[]) || []) {
-    taskByKey.set(`${t.client_id}|${t.compliance_type_id}|${t.period_key}`, { id: t.id, stage: t.stage });
+  const taskByKey = new Map<string, { id: string; stage: TaskStage; arn: string | null }>();
+  for (const t of (statutoryTasks as { id: string; client_id: string; compliance_type_id: string; period_key: string; stage: TaskStage; arn: string | null }[]) || []) {
+    taskByKey.set(`${t.client_id}|${t.compliance_type_id}|${t.period_key}`, { id: t.id, stage: t.stage, arn: t.arn });
   }
 
   return (
@@ -143,8 +143,16 @@ export default async function CompliancePage() {
                       return (
                         <td key={ct.id} className="px-3 py-2">
                           {task ? (
-                            <Link href={`/tasks/${task.id}`}>
+                            <Link href={`/tasks/${task.id}`} className="inline-block">
                               <StageBadge stage={task.stage} />
+                              {task.arn && (
+                                <span
+                                  className="block text-[10px] text-[var(--color-text-muted)] mt-0.5 max-w-[8rem] truncate"
+                                  title={`ARN: ${task.arn}`}
+                                >
+                                  ARN {task.arn}
+                                </span>
+                              )}
                             </Link>
                           ) : (
                             <Badge variant="warning">Not generated</Badge>
