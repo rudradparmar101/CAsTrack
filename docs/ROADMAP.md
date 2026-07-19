@@ -83,14 +83,29 @@ Low-effort/high-daily-value: the underlying lists (tasks, filing grid, outstandi
 - [ ] Client-portal dashboard stats drill through the same way, but only ever to that client's own already-permitted views (no new data exposure — reuse the existing RLS-gated / definer-view read paths).
 - [ ] Explicitly out of scope: new aggregations, new endpoints, charts, or any widening of what a role can see. This is navigation wiring over existing filtered views only.
 
-## Phase 12.5 — Statutory identifiers & migration on-ramp [ ]
+## Phase 12.5 — Statutory identifiers & migration on-ramp [~]
+**Progress note (2026-07-19):** session scoped to the ARN + UDIN items only (bulk client
+import explicitly excluded this session, per the runner prompt — one phase per session).
+Migration `007_udin_register_and_arn.sql` drafted (tasks.arn/tasks.filed_date columns +
+new udin_register table, RLS written at creation, mirrors receipts' SELECT/INSERT/UPDATE/
+DELETE shape) and folded into schema.sql — **⚠ HUMAN STOP: not yet applied**, awaiting
+Jay's review + manual application via the Supabase SQL editor, same gate as migrations
+001/002/004/005/006. A permission-gating decision was flagged rather than decided
+unilaterally: UDIN register reads reuse the existing `reports.view` (same as the filing
+grid); writes are proposed as PARTNER-ONLY at the RLS layer (no new permission key),
+mirroring Phase 10's statutory-generation precedent — alternative (a new
+`compliance.manage` key paired with `reports.view`) noted but not built. UI/action layer
+NOT started — waiting on migration application per the runner prompt's explicit gate.
+Resume here: once Jay confirms the migration is applied, build the UI/actions against it.
 - [ ] ARN/acknowledgment number capture on filing outcomes; nullable field on the
       outcome record; surfaced in filing-status grid; visible_to_client gated in portal
+      — migration drafted (`tasks.arn`/`tasks.filed_date`), UI not yet built.
 - [ ] UDIN register: capture only, NOT auto-generated. Fields: udin, document type,
       client, date, signing partner, linked task/document. ICAI portal integration
-      is out of scope.
+      is out of scope. — migration drafted (`udin_register` table + RLS), UI not yet built.
 - [ ] Bulk client import from Excel/CSV: service-role-only path, validates PAN/GSTIN
-      format, dry-run preview before commit, idempotent on PAN within firm
+      format, dry-run preview before commit, idempotent on PAN within firm — NOT started
+      this session (explicitly out of scope, see progress note above).
 - [ ] Exit gate: import 50 dummy clients, ARN + UDIN round-trip through UI and portal,
       RLS smoke still 14/14
 
@@ -130,7 +145,7 @@ Low-effort/high-daily-value: the underlying lists (tasks, filing grid, outstandi
 - **`fee_masters` rate-card management UI (2026-07-19).** Closes the Phase 12 gap where rate-card rows could only be seeded via direct DB access. A "Rate Card" section on `/billing`: create/edit/deactivate (no hard delete), `billing.manage`-gated writes / `billing.view`-gated reads, on the existing schema/RLS/permissions — no migration. Runtime-verified as three real accounts (partner, `billing.manage` employee, `billing.view`-only employee), including a direct-PostgREST RLS probe. Full detail: project_context.md §4.10.
 
 ## Deferred (post-pilot, promote to phases on demand)
-Full notices module (Ph9 category tag is the stopgap) · client groups · timesheets/attendance · GSP/Tally sync · UDIN/challan registers · WhatsApp Business API channel (Meta application + hook into the Ph11 channel-agnostic sender) — Jay's call: do last, if at all. Meta approval takes weeks — start the application that far ahead of wanting it live. · Dashboard card detail modals for the remaining cards: By Priority (admin dashboard) and all member/employee-dashboard stat cards (Pending/Overdue/Due Soon/Complete%) — Client Workload + Department Workload got theirs off-roadmap on 2026-07-19; the rest deliberately deferred, see project_context.md §4.6.
+Full notices module (Ph9 category tag is the stopgap) · client groups · timesheets/attendance · GSP/Tally sync · challan register (UDIN register itself moved to Phase 12.5, 2026-07-19 — see that phase) · WhatsApp Business API channel (Meta application + hook into the Ph11 channel-agnostic sender) — Jay's call: do last, if at all. Meta approval takes weeks — start the application that far ahead of wanting it live. · Dashboard card detail modals for the remaining cards: By Priority (admin dashboard) and all member/employee-dashboard stat cards (Pending/Overdue/Due Soon/Complete%) — Client Workload + Department Workload got theirs off-roadmap on 2026-07-19; the rest deliberately deferred, see project_context.md §4.6. · Seed a few default `task_templates` on firm creation as onboarding value (a brand-new firm currently starts with zero templates) — needs a human decision on which starter templates to seed (which compliance flavors, how many, department-scoped how); noted 2026-07-19 per explicit instruction not to fold it into Phase 12.5 (one-phase-per-session).
 
 ## Deliberate non-goals
 These are DECISIONS, not backlog. A future session must not build them opportunistically:

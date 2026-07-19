@@ -565,6 +565,14 @@ CREATE TABLE public.tasks (
   -- 'completed' (rendered as received/pending); covered by the existing
   -- tasks SELECT/UPDATE RLS policies, no new policy needed.
   checklist_items    JSONB NOT NULL DEFAULT '[]'::jsonb,
+  -- Structured filing outcome (Phase 12.5 / migration 007) — promoted out of
+  -- task_activities (staff-only readable) for the same reason checklist_items
+  -- was: the filing-status grid and the client portal both need to read
+  -- this, and only a plain column on tasks is covered by the existing
+  -- SELECT/UPDATE RLS. task_activities keeps logging filing_outcome_recorded
+  -- as the audit trail; these columns are the display source of truth.
+  arn                TEXT,
+  filed_date         DATE,
   created_by         UUID NOT NULL REFERENCES public.profiles(id),
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -683,6 +691,29 @@ CREATE TABLE public.task_templates (
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- UDIN register (Phase 12.5 / migration 007) — firm-side record of a UDIN a
+-- signing CA member generated on ICAI's own portal for a certified document;
+-- capture only, never a generator/validator against ICAI. See migration
+-- 007's header for the full column-by-column design rationale (udin format,
+-- why document_type stays free text, why signing_partner_id isn't role-
+-- restricted at the DB layer, why there's no soft-delete column).
+CREATE TABLE public.udin_register (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  firm_id            UUID NOT NULL REFERENCES public.firms(id) ON DELETE CASCADE,
+  client_id          UUID NOT NULL REFERENCES public.clients(id) ON DELETE RESTRICT,
+  udin               TEXT NOT NULL CHECK (udin ~ '^[0-9A-Z]{18}$'), -- ICAI UDINs are always 18 alphanumeric chars; sub-structure not validated
+  document_type      TEXT NOT NULL CHECK (length(trim(document_type)) > 0), -- free text: firm's own document/certificate description
+  generated_on       DATE NOT NULL DEFAULT CURRENT_DATE,
+  signing_partner_id UUID NOT NULL REFERENCES public.profiles(id), -- the CA member who generated the UDIN; app defaults the picker to partners, not DB-enforced
+  task_id            UUID REFERENCES public.tasks(id) ON DELETE SET NULL,
+  document_id        UUID REFERENCES public.documents(id) ON DELETE SET NULL,
+  notes              TEXT,
+  created_by         UUID NOT NULL REFERENCES public.profiles(id),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (firm_id, udin) -- scoped to firm, not global, so one firm's insert can't leak whether another firm holds a given UDIN
+);
+
 -- ============================================================================
 -- 7. INDEXES
 -- ============================================================================
@@ -727,6 +758,10 @@ CREATE INDEX idx_doc_versions_document    ON public.document_versions(document_i
 CREATE INDEX idx_activities_task          ON public.task_activities(task_id);
 CREATE INDEX idx_notifications_user       ON public.notifications(user_id, is_read);
 CREATE INDEX idx_templates_firm           ON public.task_templates(firm_id);
+CREATE INDEX idx_udin_register_firm       ON public.udin_register(firm_id);
+CREATE INDEX idx_udin_register_client     ON public.udin_register(client_id);
+CREATE INDEX idx_udin_register_task       ON public.udin_register(task_id) WHERE task_id IS NOT NULL;
+CREATE INDEX idx_udin_register_document   ON public.udin_register(document_id) WHERE document_id IS NOT NULL;
 
 -- ============================================================================
 -- 8. HELPER FUNCTIONS
@@ -1012,6 +1047,7 @@ CREATE TRIGGER on_template_updated      BEFORE UPDATE ON public.task_templates  
 CREATE TRIGGER on_fee_master_updated    BEFORE UPDATE ON public.fee_masters           FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE TRIGGER on_firm_invoice_updated  BEFORE UPDATE ON public.firm_invoices         FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE TRIGGER on_receipt_updated       BEFORE UPDATE ON public.receipts              FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+CREATE TRIGGER on_udin_register_updated BEFORE UPDATE ON public.udin_register         FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 -- 9.2 Profile privilege lockdown (fixes flag F1: the DeadlineTracker
 -- "update own profile" policy would otherwise let a user self-escalate role,
@@ -1673,6 +1709,7 @@ ALTER TABLE public.firm_invoice_items         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.firm_invoice_counters      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.receipts                   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.receipt_history            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.udin_register              ENABLE ROW LEVEL SECURITY;
 
 -- ---------------------------------------------------------------------------
 -- 11.1 platform_admins
@@ -2573,6 +2610,34 @@ CREATE POLICY "Billing viewers can see receipt history"
 CREATE POLICY "Super admins can view all receipt history"
   ON public.receipt_history FOR SELECT TO authenticated
   USING (public.is_super_admin());
+
+-- ---------------------------------------------------------------------------
+-- 11.24 udin_register (Phase 12.5 / migration 007) — reads via the SAME
+-- reports.view permission the filing-status grid uses (no new permission
+-- key); writes are PARTNER-ONLY at the RLS layer itself (get_user_role(),
+-- not a permission-catalog key) — mirrors Phase 10's identical choice for
+-- statutory-task generation. See migration 007's header for the full
+-- reasoning, including the flagged alternative (a compliance.manage key).
+-- ---------------------------------------------------------------------------
+CREATE POLICY "Report viewers can see the UDIN register"
+  ON public.udin_register FOR SELECT TO authenticated
+  USING (firm_id = public.get_user_firm_id() AND public.has_permission('reports.view'));
+
+CREATE POLICY "Super admins can view all UDIN register entries"
+  ON public.udin_register FOR SELECT TO authenticated
+  USING (public.is_super_admin());
+
+CREATE POLICY "Partners can create UDIN register entries"
+  ON public.udin_register FOR INSERT TO authenticated
+  WITH CHECK (firm_id = public.get_user_firm_id() AND public.get_user_role() = 'partner');
+
+CREATE POLICY "Partners can update UDIN register entries"
+  ON public.udin_register FOR UPDATE TO authenticated
+  USING (firm_id = public.get_user_firm_id() AND public.get_user_role() = 'partner');
+
+CREATE POLICY "Partners can delete UDIN register entries"
+  ON public.udin_register FOR DELETE TO authenticated
+  USING (firm_id = public.get_user_firm_id() AND public.get_user_role() = 'partner');
 
 -- ============================================================================
 -- 12. STORAGE POLICIES (bucket: 'client-documents')
