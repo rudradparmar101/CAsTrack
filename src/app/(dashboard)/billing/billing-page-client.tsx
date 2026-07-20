@@ -30,6 +30,7 @@ interface BillingPageClientProps {
   allFeeMasters: FeeMasterWithRefs[];
   complianceTypes: Pick<ComplianceType, 'id' | 'code' | 'name'>[];
   firmGstin: string | null;
+  clientDefaultStates: Record<string, { state: string | null; state_code: string | null }>;
   canManage: boolean;
 }
 
@@ -41,6 +42,7 @@ export function BillingPageClient({
   allFeeMasters,
   complianceTypes,
   firmGstin,
+  clientDefaultStates,
   canManage,
 }: BillingPageClientProps) {
   const router = useRouter();
@@ -264,6 +266,7 @@ export function BillingPageClient({
           clients={clients}
           feeMasters={feeMasters}
           firmGstin={firmGstin}
+          clientDefaultStates={clientDefaultStates}
           onSuccess={(invoiceId) => {
             setShowCreateModal(false);
             router.push(`/billing/${invoiceId}`);

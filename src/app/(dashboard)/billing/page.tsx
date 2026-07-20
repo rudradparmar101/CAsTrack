@@ -5,6 +5,16 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { BillingPageClient } from './billing-page-client';
 import type { Client, ClientOutstanding, ComplianceType, FeeMaster, FeeMasterWithRefs, FirmInvoiceWithClient } from '@/lib/types';
 
+/** Client's state for defaulting an invoice's place of supply (recon Group
+ *  D): prefer an active GSTIN registration's state (more GST-correct when a
+ *  client holds multiple GSTINs across states), falling back to the
+ *  registered address. Both are pre-filled defaults, never locked — the
+ *  invoice form's place-of-supply field stays fully editable. */
+interface ClientDefaultState {
+  state: string | null;
+  state_code: string | null;
+}
+
 export default async function BillingPage() {
   const { supabase, profile, firm } = await getAuthContext();
   const isPartner = profile.role === 'partner';
@@ -28,6 +38,8 @@ export default async function BillingPage() {
     { data: feeMasters },
     { data: allFeeMasters },
     { data: complianceTypes },
+    { data: gstinRegistrations },
+    { data: registeredAddresses },
   ] = await Promise.all([
     supabase
       .from('firm_invoices')
@@ -45,7 +57,24 @@ export default async function BillingPage() {
       .select('*, client:client_id(id, name), compliance_type:compliance_type_id(id, code, name)')
       .order('service_name'),
     supabase.from('compliance_types').select('id, code, name').eq('is_active', true).order('name'),
+    // Place-of-supply defaulting (recon Group D): active GSTIN registrations first.
+    supabase.from('client_registrations').select('client_id, state, state_code').eq('type', 'gstin').eq('is_active', true),
+    // Fallback: registered address, for clients with no GSTIN registration on file.
+    supabase.from('client_addresses').select('client_id, state, state_code').eq('type', 'registered'),
   ]);
+
+  const clientDefaultStates: Record<string, ClientDefaultState> = {};
+  for (const addr of (registeredAddresses as { client_id: string; state: string; state_code: string | null }[]) || []) {
+    if (!clientDefaultStates[addr.client_id]) {
+      clientDefaultStates[addr.client_id] = { state: addr.state, state_code: addr.state_code };
+    }
+  }
+  // GSTIN registration takes priority — overwrite the address fallback if present.
+  for (const reg of (gstinRegistrations as { client_id: string; state: string | null; state_code: string | null }[]) || []) {
+    if (reg.state_code) {
+      clientDefaultStates[reg.client_id] = { state: reg.state, state_code: reg.state_code };
+    }
+  }
 
   return (
     <BillingPageClient
@@ -56,6 +85,7 @@ export default async function BillingPage() {
       allFeeMasters={(allFeeMasters as unknown as FeeMasterWithRefs[]) || []}
       complianceTypes={(complianceTypes as Pick<ComplianceType, 'id' | 'code' | 'name'>[]) || []}
       firmGstin={firm.gstin}
+      clientDefaultStates={clientDefaultStates}
       canManage={canManage}
     />
   );
