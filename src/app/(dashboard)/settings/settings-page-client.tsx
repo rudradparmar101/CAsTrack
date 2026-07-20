@@ -184,6 +184,14 @@ export function SettingsPageClient({ profile, firm }: SettingsPageClientProps) {
               required
             />
             <Input
+              label="GSTIN"
+              name="gstin"
+              defaultValue={firm.gstin ?? ''}
+              placeholder="e.g. 24AAAAA0000A1Z5"
+              maxLength={15}
+              hint="Your firm's own GSTIN — appears on every invoice as the supplier GSTIN, and its first 2 digits let invoices auto-detect interstate supply. Leave blank if not yet registered."
+            />
+            <Input
               label="Invite Code"
               value={firm.invite_code}
               disabled

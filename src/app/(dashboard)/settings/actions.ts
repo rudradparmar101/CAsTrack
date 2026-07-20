@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { GSTIN_RE } from '@/lib/ca-options';
 import type { ActionResult } from '@/lib/types';
 
 export async function updateProfileAction(formData: FormData): Promise<ActionResult> {
@@ -53,9 +54,15 @@ export async function updateOrganizationAction(formData: FormData): Promise<Acti
     return { success: false, error: 'Firm name is required.' };
   }
 
+  const gstinRaw = (formData.get('gstin') as string)?.trim().toUpperCase();
+  const gstin = gstinRaw || null;
+  if (gstin && !GSTIN_RE.test(gstin)) {
+    return { success: false, error: 'Please enter a valid 15-character GSTIN.' };
+  }
+
   const { error } = await supabase
     .from('firms')
-    .update({ name })
+    .update({ name, gstin })
     .eq('id', profile.firm_id);
 
   if (error) {
