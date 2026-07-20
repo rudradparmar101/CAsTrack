@@ -455,8 +455,8 @@ function InvitePortalForm({
     return (
       <div className="space-y-4">
         <p className="text-sm text-[var(--color-text)]">
-          Invitation created. Email sending isn&apos;t wired up yet — share this
-          link with the client directly (valid for 7 days):
+          Invitation created and an email has been sent to the client. You can
+          also share this link directly (valid for 7 days):
         </p>
         <div className="flex items-center gap-2">
           <code className="flex-1 text-xs bg-[var(--color-muted)] border border-[var(--color-border)] rounded-lg px-3 py-2 break-all select-all">
