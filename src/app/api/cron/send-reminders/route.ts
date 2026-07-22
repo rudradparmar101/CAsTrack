@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getFirmPartnerId } from '@/lib/compliance/generation';
-import { sendStatutoryReminders, sendWaitingClientNags } from '@/lib/compliance/reminders';
+import { sendStatutoryReminders, sendWaitingClientNags, sendDscExpiryAlerts } from '@/lib/compliance/reminders';
 
 /**
  * Scheduled reminder sweep, across every firm — same shape as
  * /api/cron/generate-statutory-tasks (service-role, CRON_SECRET-gated, safe
- * to re-run daily; idempotency lives in task_activities, not this route).
+ * to re-run daily). Idempotency lives in task_activities for the statutory/
+ * waiting_client sweeps (Phase 11); the DSC expiry sweep (Phase 13.2) uses
+ * columns directly on dsc_register instead, since a DSC has no task to
+ * attach an activity entry to — see lib/compliance/reminders.ts's
+ * sendDscExpiryAlerts() header.
  *
  * Example vercel.json entry:
  *   { "path": "/api/cron/send-reminders", "schedule": "0 4 * * *" }
@@ -39,11 +43,12 @@ export async function GET(request: NextRequest) {
       continue;
     }
     try {
-      const [statutory, nags] = await Promise.all([
+      const [statutory, nags, dscAlerts] = await Promise.all([
         sendStatutoryReminders(admin, firm.id, partnerId, firm.name, siteUrl),
         sendWaitingClientNags(admin, firm.id, partnerId, firm.name, siteUrl),
+        sendDscExpiryAlerts(admin, firm.id, firm.name, siteUrl),
       ]);
-      results.push({ firmId: firm.id, firmName: firm.name, summary: { ...statutory, ...nags } });
+      results.push({ firmId: firm.id, firmName: firm.name, summary: { ...statutory, ...nags, ...dscAlerts } });
     } catch (err) {
       results.push({
         firmId: firm.id,

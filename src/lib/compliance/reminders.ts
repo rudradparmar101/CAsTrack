@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { differenceInCalendarDays, format } from 'date-fns';
 import { sendEmail } from '@/lib/email/resend';
-import { statutoryReminderEmail, waitingClientNagEmail } from '@/lib/email/templates';
+import { statutoryReminderEmail, waitingClientNagEmail, dscExpiryAlertEmail } from '@/lib/email/templates';
 
 /**
  * Reminder scheduler (Phase 11) — channel-agnostic (email today, WhatsApp
@@ -15,6 +15,10 @@ import { statutoryReminderEmail, waitingClientNagEmail } from '@/lib/email/templ
 
 const REMINDER_TIERS = [7, 3, 1] as const;
 const WAITING_CLIENT_NAG_AFTER_DAYS = 3;
+// DSC renewal is a slower process than a statutory filing (the CA/holder
+// must re-verify identity with the issuing authority), so it gets more
+// advance notice than the statutory-due-date tiers above.
+const DSC_ALERT_TIERS = [30, 15, 7, 1] as const;
 
 /** `tasks.statutory_due_date` is a plain DATE column ('YYYY-MM-DD'). Parsing
  *  that bare string with `new Date()` reads it as UTC midnight, which
@@ -287,6 +291,110 @@ export async function sendWaitingClientNags(
       summary.nagsSent += 1;
     } catch (err) {
       summary.errors.push(`waiting_client nag for task ${task.id}: ${err instanceof Error ? err.message : 'unknown error'}`);
+    }
+  }
+
+  return summary;
+}
+
+/** T-30/T-15/T-7/T-1 DSC expiry alerts, one firm at a time (Phase 13.2).
+ *  Internal-only — emails/notifies every active PARTNER of the firm (no
+ *  client contact involved; a DSC's custody chain is a staff-facing
+ *  concern). Idempotency lives directly on dsc_register itself
+ *  (last_expiry_alert_tier / last_expiry_alert_sent_for_expiry — see
+ *  migration 008), not task_activities (a DSC has no task) and not a new
+ *  table. Storing the expiry date alongside the tier means a renewal
+ *  (expires_on moves forward) naturally re-arms future alerts with no reset
+ *  step needed — the stored (tier, expiry) pair from the last send simply
+ *  no longer matches. */
+export async function sendDscExpiryAlerts(
+  supabase: SupabaseClient,
+  firmId: string,
+  firmName: string,
+  siteUrl: string,
+  referenceDate: Date = new Date()
+): Promise<{ dscAlertsSent: number; errors: string[] }> {
+  const summary = { dscAlertsSent: 0, errors: [] as string[] };
+
+  const maxTier = Math.max(...DSC_ALERT_TIERS);
+  const rangeEnd = new Date(referenceDate);
+  rangeEnd.setDate(rangeEnd.getDate() + maxTier);
+
+  const { data: dscs } = await supabase
+    .from('dsc_register')
+    .select('id, holder_name, expires_on, last_expiry_alert_tier, last_expiry_alert_sent_for_expiry, client:client_id(name)')
+    .eq('firm_id', firmId)
+    .eq('is_active', true)
+    .gte('expires_on', format(referenceDate, 'yyyy-MM-dd'))
+    .lte('expires_on', format(rangeEnd, 'yyyy-MM-dd'));
+
+  if (!dscs || dscs.length === 0) return summary;
+
+  const { data: partners } = await supabase
+    .from('profiles')
+    .select('id, email')
+    .eq('firm_id', firmId)
+    .eq('role', 'partner')
+    .eq('is_active', true);
+
+  if (!partners || partners.length === 0) return summary;
+
+  for (const dsc of dscs) {
+    try {
+      const daysRemaining = differenceInCalendarDays(parseDateOnly(dsc.expires_on), referenceDate);
+      if (!(DSC_ALERT_TIERS as readonly number[]).includes(daysRemaining)) continue;
+
+      const tier = `T-${daysRemaining}`;
+      // Idempotent on the (tier, expiry) pair — NOT the tier alone, so a
+      // renewal (expires_on change) doesn't get silently treated as
+      // "already alerted".
+      if (dsc.last_expiry_alert_tier === tier && dsc.last_expiry_alert_sent_for_expiry === dsc.expires_on) continue;
+
+      const clientName = (dsc.client as unknown as { name: string } | null)?.name || 'Unknown client';
+      const expiresOnFormatted = format(parseDateOnly(dsc.expires_on), 'd MMM yyyy');
+      const html = dscExpiryAlertEmail({
+        firmName,
+        holderName: dsc.holder_name,
+        clientName,
+        expiresOn: expiresOnFormatted,
+        daysRemaining,
+        dscUrl: `${siteUrl}/dsc`,
+      });
+
+      for (const partner of partners) {
+        if (partner.email) {
+          await sendEmail({
+            to: partner.email,
+            subject: `DSC expiring in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}: ${dsc.holder_name}`,
+            html,
+          });
+        }
+        // Direct insert (service-role bypasses RLS) — same pattern as
+        // notifyPortalUser() above; create_notification() is for
+        // RLS-scoped callers, not the cron route.
+        await supabase.from('notifications').insert({
+          firm_id: firmId,
+          user_id: partner.id,
+          type: 'due_date_approaching',
+          title: `DSC expiring in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`,
+          message: `${dsc.holder_name}'s DSC (${clientName}) expires ${expiresOnFormatted}.`,
+          reference_id: dsc.id,
+          reference_type: 'dsc_register',
+        });
+      }
+
+      // Touches ONLY the two alert-idempotency columns — never
+      // current_custodian_id — so this deliberately writes NO row to
+      // dsc_custody_movements (the trigger's WHEN clause guards exactly
+      // this case; see migration 008).
+      await supabase
+        .from('dsc_register')
+        .update({ last_expiry_alert_tier: tier, last_expiry_alert_sent_for_expiry: dsc.expires_on })
+        .eq('id', dsc.id);
+
+      summary.dscAlertsSent += 1;
+    } catch (err) {
+      summary.errors.push(`dsc expiry alert for ${dsc.id}: ${err instanceof Error ? err.message : 'unknown error'}`);
     }
   }
 

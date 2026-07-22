@@ -143,6 +143,26 @@ export function passwordResetEmail(params: {
   });
 }
 
+export function dscExpiryAlertEmail(params: {
+  firmName: string;
+  holderName: string;
+  clientName: string;
+  expiresOn: string;
+  daysRemaining: number;
+  dscUrl: string;
+}): string {
+  const expiryText = params.daysRemaining === 1 ? 'expires tomorrow' : `expires in ${params.daysRemaining} days`;
+  return layout({
+    preheader: `${params.holderName}'s DSC ${expiryText}`,
+    heading: `DSC ${expiryText}: ${params.holderName}`,
+    bodyHtml: `<p style="margin:0 0 12px;">A digital signature token held for <strong>${params.clientName}</strong> (holder: <strong>${params.holderName}</strong>) ${expiryText}, on <strong>${params.expiresOn}</strong>.</p>
+      <p style="margin:0;">Renewing in advance avoids a filing being blocked mid-season.</p>`,
+    ctaUrl: params.dscUrl,
+    ctaLabel: 'View DSC register',
+    firmName: params.firmName,
+  });
+}
+
 export function waitingClientNagEmail(params: {
   clientName: string;
   firmName: string;
