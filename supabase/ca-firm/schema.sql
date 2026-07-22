@@ -714,6 +714,56 @@ CREATE TABLE public.udin_register (
   UNIQUE (firm_id, udin) -- scoped to firm, not global, so one firm's insert can't leak whether another firm holds a given UDIN
 );
 
+-- DSC (Digital Signature Certificate) register (Phase 13.2 / migration 008) —
+-- firm-side record of physical USB tokens held on behalf of client
+-- signatories. Belongs to a PERSON (holder_name/holder_designation), not
+-- necessarily the client entity — one client can have several, one per
+-- authorized signatory. NO credential columns anywhere (PIN/password) — see
+-- migration 008's header for the full column-by-column rationale, why reads
+-- and movements are gated on the existing clients.view permission rather
+-- than udin_register's reports.view, and why there's no DELETE policy at
+-- all (stricter than udin_register, mirrors clients/departments instead).
+CREATE TABLE public.dsc_register (
+  id                                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  firm_id                           UUID NOT NULL REFERENCES public.firms(id) ON DELETE CASCADE,
+  client_id                         UUID NOT NULL REFERENCES public.clients(id) ON DELETE RESTRICT,
+  holder_name                       TEXT NOT NULL CHECK (length(trim(holder_name)) > 0), -- the signatory the token belongs to, not the client entity
+  holder_designation                TEXT, -- 'Director' | 'Proprietor' | 'Partner' | ... free text
+  issuing_authority                 TEXT NOT NULL CHECK (length(trim(issuing_authority)) > 0), -- eMudhra/Sify/nCode/Capricorn/... free text, same reasoning as udin_register.document_type
+  dsc_class                         TEXT NOT NULL CHECK (length(trim(dsc_class)) > 0), -- free text: CCA's own class taxonomy has changed over time (Class 2 phased out 2021)
+  serial_number                     TEXT NOT NULL CHECK (length(trim(serial_number)) > 0), -- printed on the token/certificate — NOT a secret
+  issued_on                         DATE,
+  expires_on                        DATE NOT NULL,
+  current_custodian_id              UUID REFERENCES public.profiles(id) ON DELETE SET NULL, -- NULL = not checked out to staff (may be with the client — see physical_storage_location)
+  physical_storage_location         TEXT,
+  is_active                         BOOLEAN NOT NULL DEFAULT true, -- no hard delete, mirrors clients/departments/compliance_types/fee_masters
+  notes                             TEXT,
+  last_expiry_alert_tier            TEXT, -- idempotency for the /api/cron/send-reminders expiry sweep; no new table
+  last_expiry_alert_sent_for_expiry DATE, -- paired with the tier so a renewal (expires_on change) naturally re-arms future alerts
+  created_by                        UUID NOT NULL REFERENCES public.profiles(id),
+  created_at                        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (firm_id, issuing_authority, serial_number) -- serials are only unique within one authority's own numbering scheme
+);
+
+-- Append-only custody trail, mirrors task_stage_history's shape
+-- (from_stage/to_stage -> from_custodian_id/to_custodian_id, changed_by ->
+-- recorded_by) and its no-INSERT-policy enforcement (§11.25). Unlike
+-- task_stage_history, `note` IS writable here — see migration 008's header
+-- for how record_dsc_movement() (§8) threads a note through without
+-- reproducing task_stage_history.note's known unwritable-from-the-app gap.
+CREATE TABLE public.dsc_custody_movements (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  firm_id           UUID NOT NULL REFERENCES public.firms(id) ON DELETE CASCADE,
+  dsc_id            UUID NOT NULL REFERENCES public.dsc_register(id) ON DELETE CASCADE,
+  movement_type     TEXT NOT NULL CHECK (movement_type IN ('check_out', 'check_in')),
+  from_custodian_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  to_custodian_id   UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  note              TEXT,
+  recorded_by       UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ============================================================================
 -- 7. INDEXES
 -- ============================================================================
@@ -762,6 +812,13 @@ CREATE INDEX idx_udin_register_firm       ON public.udin_register(firm_id);
 CREATE INDEX idx_udin_register_client     ON public.udin_register(client_id);
 CREATE INDEX idx_udin_register_task       ON public.udin_register(task_id) WHERE task_id IS NOT NULL;
 CREATE INDEX idx_udin_register_document   ON public.udin_register(document_id) WHERE document_id IS NOT NULL;
+
+CREATE INDEX idx_dsc_register_firm       ON public.dsc_register(firm_id);
+CREATE INDEX idx_dsc_register_client     ON public.dsc_register(client_id);
+CREATE INDEX idx_dsc_register_custodian  ON public.dsc_register(current_custodian_id) WHERE current_custodian_id IS NOT NULL;
+CREATE INDEX idx_dsc_register_expires_on ON public.dsc_register(expires_on) WHERE is_active;
+CREATE INDEX idx_dsc_movements_firm      ON public.dsc_custody_movements(firm_id);
+CREATE INDEX idx_dsc_movements_dsc       ON public.dsc_custody_movements(dsc_id);
 
 -- ============================================================================
 -- 8. HELPER FUNCTIONS
@@ -1048,6 +1105,7 @@ CREATE TRIGGER on_fee_master_updated    BEFORE UPDATE ON public.fee_masters     
 CREATE TRIGGER on_firm_invoice_updated  BEFORE UPDATE ON public.firm_invoices         FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE TRIGGER on_receipt_updated       BEFORE UPDATE ON public.receipts              FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE TRIGGER on_udin_register_updated BEFORE UPDATE ON public.udin_register         FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+CREATE TRIGGER on_dsc_register_updated  BEFORE UPDATE ON public.dsc_register           FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 -- 9.2 Profile privilege lockdown (fixes flag F1: the DeadlineTracker
 -- "update own profile" policy would otherwise let a user self-escalate role,
@@ -1605,6 +1663,86 @@ REVOKE INSERT, UPDATE, DELETE
   FROM authenticated;
 GRANT SELECT ON public.client_outstanding TO authenticated;
 
+-- 9.7 DSC register (Phase 13.2 / migration 008): movement logging + the
+-- validated custody-recording RPC. See migration 008's header for the full
+-- design rationale (why a narrow RPC was chosen over a column-freeze guard
+-- trigger, and how it solves the note-writability gap task_stage_history has).
+
+-- Sole writer of dsc_custody_movements (no INSERT policy exists on that
+-- table). GUARDED TWICE against firing on unrelated dsc_register updates
+-- (e.g. the expiry-alert cron writing last_expiry_alert_tier /
+-- last_expiry_alert_sent_for_expiry): the trigger's own WHEN clause means
+-- this function isn't invoked at all unless current_custodian_id changed,
+-- and the function body repeats the same IS DISTINCT FROM check as defense
+-- in depth. Creation with a NULL initial custodian logs nothing.
+CREATE OR REPLACE FUNCTION public.log_dsc_custody_movement()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NEW.current_custodian_id IS DISTINCT FROM OLD.current_custodian_id THEN
+    INSERT INTO public.dsc_custody_movements
+      (firm_id, dsc_id, movement_type, from_custodian_id, to_custodian_id, note, recorded_by)
+    VALUES (
+      NEW.firm_id,
+      NEW.id,
+      CASE WHEN NEW.current_custodian_id IS NOT NULL THEN 'check_out' ELSE 'check_in' END,
+      OLD.current_custodian_id,
+      NEW.current_custodian_id,
+      NULLIF(current_setting('app.dsc_movement_note', true), ''),
+      auth.uid()
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER record_dsc_custody_movement
+  AFTER UPDATE ON public.dsc_register
+  FOR EACH ROW
+  WHEN (NEW.current_custodian_id IS DISTINCT FROM OLD.current_custodian_id)
+  EXECUTE FUNCTION public.log_dsc_custody_movement();
+
+-- The only path any non-partner staff member can use to change
+-- current_custodian_id — SECURITY DEFINER so it can UPDATE regardless of
+-- dsc_register's own partner-only UPDATE RLS policy, but re-validates the
+-- SAME clients.view permission the SELECT policies below use, plus same-firm
+-- scoping and custodian eligibility, before touching anything. This check is
+-- load-bearing, not redundant: SECURITY DEFINER bypasses RLS entirely, so
+-- this function body is the ONLY thing enforcing who may call it. Same shape
+-- as create_notification()/get_client_assigned_contact() above.
+CREATE OR REPLACE FUNCTION public.record_dsc_movement(
+  p_dsc_id UUID,
+  p_new_custodian_id UUID,
+  p_note TEXT DEFAULT NULL
+) RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_firm_id UUID;
+BEGIN
+  IF NOT public.has_permission('clients.view') THEN
+    RAISE EXCEPTION 'You do not have permission to view this client''s DSC records';
+  END IF;
+
+  SELECT firm_id INTO v_firm_id FROM public.dsc_register WHERE id = p_dsc_id;
+  IF v_firm_id IS NULL OR v_firm_id IS DISTINCT FROM public.get_user_firm_id() THEN
+    RAISE EXCEPTION 'DSC record not found in your firm';
+  END IF;
+
+  IF p_new_custodian_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = p_new_custodian_id AND firm_id = v_firm_id AND role IN ('partner', 'employee')
+  ) THEN
+    RAISE EXCEPTION 'Custodian must be a staff member of this firm';
+  END IF;
+
+  -- Transaction-local; read back by log_dsc_custody_movement() above within
+  -- this same statement's transaction. Cleared automatically at COMMIT.
+  PERFORM set_config('app.dsc_movement_note', COALESCE(p_note, ''), true);
+
+  UPDATE public.dsc_register
+  SET current_custodian_id = p_new_custodian_id
+  WHERE id = p_dsc_id;
+END;
+$$;
+
 -- ============================================================================
 -- 10. SEED DATA
 -- ============================================================================
@@ -1710,6 +1848,8 @@ ALTER TABLE public.firm_invoice_counters      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.receipts                   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.receipt_history            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.udin_register              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dsc_register               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dsc_custody_movements      ENABLE ROW LEVEL SECURITY;
 
 -- ---------------------------------------------------------------------------
 -- 11.1 platform_admins
@@ -2638,6 +2778,55 @@ CREATE POLICY "Partners can update UDIN register entries"
 CREATE POLICY "Partners can delete UDIN register entries"
   ON public.udin_register FOR DELETE TO authenticated
   USING (firm_id = public.get_user_firm_id() AND public.get_user_role() = 'partner');
+
+-- ---------------------------------------------------------------------------
+-- 11.25 dsc_register / dsc_custody_movements (Phase 13.2 / migration 008) —
+-- reads are gated on the EXISTING clients.view permission (partner bypass as
+-- normal via has_permission(), no new permission key) — REVISED from an
+-- initial is_firm_staff() draft after review: an employee with clients.view
+-- revoked (a real, tested configuration — rls-smoke.mjs's E2 case) must not
+-- be able to read dsc_register.client_id/holder_name, which is client-
+-- identifying data exactly like the clients table itself. Full-record writes
+-- (create/edit) are PARTNER-ONLY at the RLS layer (get_user_role(), no
+-- permission key), mirroring udin_register. Custody movements (check-out/
+-- check-in) do NOT ride a broader UPDATE policy at all — record_dsc_movement()
+-- (§9.7) is the only path a non-partner staff member can use to change
+-- current_custodian_id, gated on the SAME clients.view check inside that
+-- SECURITY DEFINER function (not RLS — RLS is bypassed by SECURITY DEFINER,
+-- so this in-function check is load-bearing, not redundant). dsc_custody_
+-- movements has NO INSERT/UPDATE/DELETE policy whatsoever — the AFTER
+-- UPDATE trigger on dsc_register is its only writer, mirroring
+-- task_stage_history exactly. Client isolation: has_permission('clients.view')
+-- resolves false for client_user before consulting anything else, so both
+-- tables and the RPC are unreachable from the portal before any other check
+-- runs.
+-- ---------------------------------------------------------------------------
+CREATE POLICY "Clients.view holders can view the DSC register"
+  ON public.dsc_register FOR SELECT TO authenticated
+  USING (firm_id = public.get_user_firm_id() AND public.has_permission('clients.view'));
+
+CREATE POLICY "Super admins can view all DSC register entries"
+  ON public.dsc_register FOR SELECT TO authenticated
+  USING (public.is_super_admin());
+
+CREATE POLICY "Partners can create DSC register entries"
+  ON public.dsc_register FOR INSERT TO authenticated
+  WITH CHECK (firm_id = public.get_user_firm_id() AND public.get_user_role() = 'partner');
+
+CREATE POLICY "Partners can update DSC register entries"
+  ON public.dsc_register FOR UPDATE TO authenticated
+  USING (firm_id = public.get_user_firm_id() AND public.get_user_role() = 'partner');
+
+-- No DELETE policy — retire via is_active, mirrors clients/departments
+-- (stricter than udin_register's unused-but-present partner DELETE policy).
+
+CREATE POLICY "Clients.view holders can view DSC custody movements"
+  ON public.dsc_custody_movements FOR SELECT TO authenticated
+  USING (firm_id = public.get_user_firm_id() AND public.has_permission('clients.view'));
+
+CREATE POLICY "Super admins can view all DSC custody movements"
+  ON public.dsc_custody_movements FOR SELECT TO authenticated
+  USING (public.is_super_admin());
 
 -- ============================================================================
 -- 12. STORAGE POLICIES (bucket: 'client-documents')
