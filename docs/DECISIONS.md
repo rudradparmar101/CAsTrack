@@ -515,6 +515,56 @@ decision.
 **Status:** active. 13.1 is deferred per the entry above; 13.2/13.3 remain normal
 unscheduled roadmap items in `docs/ROADMAP.md`.
 
+### 2026-07-23 — DSC register: reads and custody movements share the clients.view gate, revised mid-review
+**Decision:** `dsc_register` and `dsc_custody_movements` SELECT, and the internal check
+inside `record_dsc_movement()`, are all gated on the existing `clients.view` permission
+(partner bypass automatic) — not a bare "any firm staff" check.
+**Rationale:** the migration's first draft used `is_firm_staff()` (any partner or
+employee, unconditionally) on the theory that DSC custody is purely operational
+information every staff member needs. Jay caught the gap before applying: an employee with
+`clients.view` explicitly revoked — a real, tested configuration already exercised by
+`rls-smoke.mjs`'s E2 case — would have been able to read `dsc_register.client_id` and
+`holder_name` anyway, which is client-identifying data in exactly the sense `clients.view`
+already exists to gate. `clients.view` was the correct, minimal fix: it's the one
+permission key that already means "may see which client this row belongs to," so reusing
+it avoided inventing a new key. Applying this consistently meant `record_dsc_movement()`
+also needed the same check — it is `SECURITY DEFINER` (bypasses RLS by default), so its
+internal check is the *only* thing standing between a raw RPC call and an unauthorized
+custody change; without this fix, an employee with `clients.view` revoked could still have
+called the RPC directly with a known `dsc_id` even though they could no longer read the
+register through the UI.
+**Status:** active. (Phase 13.2, migration 008)
+
+### 2026-07-23 — Custody movements route through a SECURITY DEFINER RPC, not a broader RLS policy
+**Decision:** `record_dsc_movement()` — not a broadened "any staff can UPDATE
+dsc_register" RLS policy paired with a column-freeze guard trigger (the `guard_firm_invoice`
+pattern) — is the only path a non-partner staff member can use to change
+`current_custodian_id`.
+**Rationale:** the RPC needed no new RLS UPDATE policy at all (the partner-only policy
+stays exactly as simple as `udin_register`'s), matches an already-proven pattern in this
+schema (`create_notification()`, `get_client_assigned_contact()` — SECURITY DEFINER with a
+manual same-firm validation, no permission-catalog key), and solves a second problem for
+free: `dsc_custody_movements.note` needed to be writable, unlike `task_stage_history.note`,
+which is a known, still-unfixed gap (project_context.md §6 / `docs/ROADMAP.md` Phase 14)
+precisely because nothing in that trigger's design threads a note through. Routing the
+note through the RPC via a transaction-local `set_config()` call, read back by the same
+AFTER UPDATE trigger within the same transaction, avoided reproducing that gap in a new
+table from day one.
+**Status:** active. (Phase 13.2, migration 008)
+
+### 2026-07-23 — DSC expiry-alert idempotency lives on dsc_register columns, not task_activities or a new table
+**Decision:** Two new nullable columns on `dsc_register` itself
+(`last_expiry_alert_tier`/`last_expiry_alert_sent_for_expiry`) track which alert tier was
+last sent and for which expiry date — not the `task_activities` tier-tagged-JSONB trick
+Phase 10/11 used for filing outcomes and reminders, and not a new table.
+**Rationale:** a DSC has no task to attach a `task_activities` entry to, so that
+established no-migration trick doesn't apply here — and this migration wasn't under a
+no-migration constraint anyway, so a real column is the more direct fit. Storing the
+expiry date alongside the tier (not the tier alone) means a renewal (`expires_on` moves
+forward) automatically re-arms future alerts: the stored `(tier, expiry)` pair from the
+last send simply no longer matches the new expiry, with no explicit reset trigger needed.
+**Status:** active. (Phase 13.2, migration 008)
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)

@@ -169,8 +169,56 @@ recorded in `docs/DECISIONS.md` — read that before ever starting this phase, s
 design doesn't get re-litigated from scratch.
 - [ ] (deferred) pgsodium/Supabase Vault server-side encryption; reveal only via a narrow server action gated by new vault.view/vault.manage permissions; audit-log table recording every reveal. — superseded by the app-layer AES-256-GCM approach decided 2026-07-23; re-read `docs/DECISIONS.md` before implementing, this bullet's original phrasing predates that decision.
 
-### Phase 13.2 — DSC register [ ]
-- [ ] dsc_records (holder client/person, expiry, storage location) + custody movements (in/out, who, when); expiry alerts into the Ph11 scheduler.
+### Phase 13.2 — DSC register [x]
+**Completed (2026-07-23):** Migration 008 (⚠ HUMAN gate observed — presented to Jay
+before any UI/action code was written; two review rounds before apply: Jay caught that the
+initial SELECT policy draft used bare `is_firm_staff()`, which would have let an employee
+with `clients.view` explicitly revoked read client-identifying data; fixed to gate on
+`clients.view` (partner bypass automatic) for both reads and custody movements, and the
+`record_dsc_movement()` RPC's internal check tightened to match — its check is the ONLY
+gate since it's SECURITY DEFINER and bypasses RLS entirely. Jay also asked for explicit
+confirmation the custody-movement trigger couldn't misfire on unrelated updates (e.g. the
+cron writing alert-idempotency columns) — added a `WHEN` clause to the trigger on top of
+the existing `IS DISTINCT FROM` body check, verified live). Applied clean in Studio,
+confirmed by Jay before any further work.
+- [x] `dsc_register` (holder client/person — the DSC belongs to a signatory, not
+      necessarily the client entity — issuing authority + class as free text like
+      `udin_register.document_type`, serial number, issued/expires dates, nullable
+      `current_custodian_id`, physical storage location, `is_active`, **zero credential
+      columns** — the vault stays deferred, see `docs/DECISIONS.md`) + `dsc_custody_movements`
+      (append-only, trigger-only-writable, mirrors `task_stage_history`, but with a writable
+      `note` via a transaction-local `set_config()` threaded through the RPC — deliberately
+      NOT reproducing `task_stage_history.note`'s known unwritable gap).
+- [x] Custody movements (check-out/check-in) route through a new `record_dsc_movement()`
+      SECURITY DEFINER RPC (same shape as `create_notification()`/
+      `get_client_assigned_contact()`) rather than a broader RLS UPDATE policy — chosen over
+      a column-freeze guard trigger because it needed no new RLS policy at all and solved
+      the note-writability problem for free. Full-record create/edit/deactivate stays
+      partner-only, no permission-catalog key, mirrors `udin_register`. No DELETE policy at
+      all (stricter than `udin_register` — mirrors clients/departments instead).
+- [x] `/dsc` (staff-internal, no `/portal` surface): expiry-status badges (expired/
+      expiring soon/valid, computed client-side — `lib/dsc.ts`), filterable by client and
+      current custodian, create/edit/deactivate gated on partner, check-out/check-in +
+      movement history for any staff member with `clients.view`. Added to the partner
+      sidebar nav only, matching the existing `/billing`/`/compliance` precedent — an
+      employee with `clients.view` can still reach it directly by URL.
+- [x] Expiry alerts folded into the EXISTING `/api/cron/send-reminders` route (not a new
+      cron route) — `sendDscExpiryAlerts()`, T-30/T-15/T-7/T-1, emails + notifies every
+      active partner of the firm. Idempotency lives directly on `dsc_register`'s
+      `last_expiry_alert_tier`/`last_expiry_alert_sent_for_expiry` columns (no
+      `task_activities` trick — a DSC has no task — and no new table); storing the expiry
+      date alongside the tier makes a renewal re-arm future alerts automatically.
+- [x] Exit gate: `scripts/verify/10-dsc-register.mjs` (committed, self-seeding RLS/RPC
+      probe suite, 17/17) proves the permission split at the database layer — reads,
+      full-record writes, and movements exactly as designed, including a client_user
+      rejection and a cron-style alert-column-only update writing zero rows to the
+      movement log. `scripts/verify/11-dsc-playwright.mjs` (committed, 17/17) drives the
+      real UI: partner creates a DSC through the actual form, all three expiry badges
+      confirmed on screen, an employee checks a token out to herself and back in through
+      the real check-out/check-in modals (never a direct DB call), movement history shows
+      her note, and a `clients.view`-revoked employee sees the page's own "No access"
+      state rather than a partial register. `npm run build` + `npm run lint` both clean
+      throughout (zero errors/warnings, baseline unchanged).
 
 ### Phase 13.3 — Per-employee permissions UI [ ]
 - [ ] Per-employee user_permissions editor on the Team page (grant/revoke overrides).
