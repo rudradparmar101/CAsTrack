@@ -1,5 +1,10 @@
 # ROADMAP — execution plan (v2, 2026-07-09)
 
+> See `docs/DECISIONS.md` for the dated, chronological record of *why* — deferrals with
+> their revisit triggers (credentials vault, WhatsApp), the Phase 13 split rationale, and
+> every architectural decision behind the phases below. This file is the forward-looking
+> plan; `docs/DECISIONS.md` is the backward-looking log.
+
 ## Protocol
 - Sessions are started with a runner prompt pointing here. Execute the FIRST phase not marked [x]. If a phase is marked [~] (in progress), resume it from its findings/progress notes instead of restarting.
 - ONE phase per session. When the exit gate is met, stop and report — never begin the next phase, even if green.
@@ -147,9 +152,27 @@ same validator as the manual form, not a second one.
       insert). A follow-up phase could add child-row import once a flat-CSV convention for
       repeated child rows is designed; not scoped here.
 
-## Phase 13 — Registers + permissions UI [ ]
-- [ ] Credentials vault (⚠ migration gate): pgsodium/Supabase Vault server-side encryption; reveal only via a narrow server action gated by new vault.view/vault.manage permissions; audit-log table recording every reveal.
-- [ ] DSC register: dsc_records (holder client/person, expiry, storage location) + custody movements (in/out, who, when); expiry alerts into the Ph11 scheduler.
+## Phase 13 — Registers + permissions UI
+**Split 2026-07-23** into 13.1/13.2/13.3 — only 13.1 carries an architecture decision
+(the deferral itself, plus the encryption design to use whenever it's built); 13.2/13.3
+are ordinary unscheduled build work with no open architectural question. See
+`docs/DECISIONS.md`'s 2026-07-23 entries for the full rationale.
+
+### Phase 13.1 — Credentials vault [DEFERRED — see docs/DECISIONS.md]
+Deferred post-pilot, by decision (not backlog). Revisit trigger: 10+ paying firms, OR a
+pilot/prospect firm explicitly blocks on it. Rationale (unrecoverable failure mode, table
+stakes not differentiation, pilot firm already manages these credentials today, risk
+scales with other people's data) and the pre-decided AES-256-GCM/app-layer encryption
+approach (key in Vercel env, AAD bound to firm_id+credential_id, reveal-only decryption,
+trigger-only-writable audit log, encapsulated behind `lib/vault/crypto.ts`) are fully
+recorded in `docs/DECISIONS.md` — read that before ever starting this phase, so the
+design doesn't get re-litigated from scratch.
+- [ ] (deferred) pgsodium/Supabase Vault server-side encryption; reveal only via a narrow server action gated by new vault.view/vault.manage permissions; audit-log table recording every reveal. — superseded by the app-layer AES-256-GCM approach decided 2026-07-23; re-read `docs/DECISIONS.md` before implementing, this bullet's original phrasing predates that decision.
+
+### Phase 13.2 — DSC register [ ]
+- [ ] dsc_records (holder client/person, expiry, storage location) + custody movements (in/out, who, when); expiry alerts into the Ph11 scheduler.
+
+### Phase 13.3 — Per-employee permissions UI [ ]
 - [ ] Per-employee user_permissions editor on the Team page (grant/revoke overrides).
 
 ## Phase 13.5 — Notices & litigation module (WEDGE) [ ]  ⚠ HUMAN GATE — do not start until >=15 real CA firm validation conversations confirm notice-deadline pain. If they don't, re-scope the wedge, not the project.
@@ -183,7 +206,7 @@ same validator as the manual form, not a second one.
 - **`fee_masters` rate-card management UI (2026-07-19).** Closes the Phase 12 gap where rate-card rows could only be seeded via direct DB access. A "Rate Card" section on `/billing`: create/edit/deactivate (no hard delete), `billing.manage`-gated writes / `billing.view`-gated reads, on the existing schema/RLS/permissions — no migration. Runtime-verified as three real accounts (partner, `billing.manage` employee, `billing.view`-only employee), including a direct-PostgREST RLS probe. Full detail: project_context.md §4.10.
 
 ## Deferred (post-pilot, promote to phases on demand)
-Full notices module (Ph9 category tag is the stopgap) · client groups · timesheets/attendance · GSP/Tally sync · challan register (UDIN register itself moved to Phase 12.5, 2026-07-19 — see that phase) · WhatsApp Business API channel (Meta application + hook into the Ph11 channel-agnostic sender) — Jay's call: do last, if at all. Meta approval takes weeks — start the application that far ahead of wanting it live. · Dashboard card detail modals for the remaining cards: By Priority (admin dashboard) and all member/employee-dashboard stat cards (Pending/Overdue/Due Soon/Complete%) — Client Workload + Department Workload got theirs off-roadmap on 2026-07-19; the rest deliberately deferred, see project_context.md §4.6. · Seed a few default `task_templates` on firm creation as onboarding value (a brand-new firm currently starts with zero templates) — needs a human decision on which starter templates to seed (which compliance flavors, how many, department-scoped how); noted 2026-07-19 per explicit instruction not to fold it into Phase 12.5 (one-phase-per-session).
+Full notices module (Ph9 category tag is the stopgap) · client groups · timesheets/attendance · GSP/Tally sync · challan register (UDIN register itself moved to Phase 12.5, 2026-07-19 — see that phase) · WhatsApp Business API channel (Meta application + hook into the Ph11 channel-agnostic sender) — Jay's call: do last, if at all. Meta approval takes weeks — start the application that far ahead of wanting it live. Reaffirmed as deferred 2026-07-23, see `docs/DECISIONS.md`. · Dashboard card detail modals for the remaining cards: By Priority (admin dashboard) and all member/employee-dashboard stat cards (Pending/Overdue/Due Soon/Complete%) — Client Workload + Department Workload got theirs off-roadmap on 2026-07-19; the rest deliberately deferred, see project_context.md §4.6. · Seed a few default `task_templates` on firm creation as onboarding value (a brand-new firm currently starts with zero templates) — needs a human decision on which starter templates to seed (which compliance flavors, how many, department-scoped how); noted 2026-07-19 per explicit instruction not to fold it into Phase 12.5 (one-phase-per-session).
 
 ## Deliberate non-goals
 These are DECISIONS, not backlog. A future session must not build them opportunistically:

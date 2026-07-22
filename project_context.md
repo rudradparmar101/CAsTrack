@@ -1,6 +1,6 @@
 # Project Context — CA Firm Management SaaS
 
-> **Last updated:** 2026-07-21 (off-roadmap: invoice GST ergonomics — firm GSTIN in Settings, place-of-supply/interstate auto-derivation, tax breakdown, invite-modal stale-copy fix; see §4.13. Phase 12.6 — Bulk client import — complete; Phase 12.5 — ARN capture + UDIN register — complete; other off-roadmap: dashboard card detail modals, branded forgot-password/reset-password flow, fee_masters rate-card management UI)
+> **Last updated:** 2026-07-23 (docs-only session: added `docs/DECISIONS.md` — chronological decision log, backfilled + new entries incl. the credentials-vault and WhatsApp deferrals with revisit triggers, and the Phase 13 split — plus `docs/deployment.md`, an env-var reference. No code/schema/migration changes. Previous entry: 2026-07-21, off-roadmap invoice GST ergonomics — firm GSTIN in Settings, place-of-supply/interstate auto-derivation, tax breakdown, invite-modal stale-copy fix; see §4.13. Phase 12.6 — Bulk client import — complete; Phase 12.5 — ARN capture + UDIN register — complete; other off-roadmap: dashboard card detail modals, branded forgot-password/reset-password flow, fee_masters rate-card management UI)
 > **Repo:** `CA prod 1/` — a local copy of the **DeadlineTracker** codebase (a Next.js + Supabase multi-tenant deadline-tracking SaaS, fully documented in `REFERENCE_ARCHITECTURE.md`) being converted in place into a **Chartered Accountant Firm Management SaaS for the Indian market**, now rebranded **CA Firm Manager**.
 > **Version control:** git, pushed to a GitHub remote (`origin/main`). ⚠ As of 2026-07-21: `docs/ROADMAP.md` and `supabase/ca-firm/migrations/006_billing_audit_and_pairing.sql` have pre-existing uncommitted working-tree changes that look like an accidental revert/truncation vs. `origin/main` (found at the start of this session, not caused by it — see §4.13's last bullet). Left untouched; Jay should check `git diff` on those two files before doing anything else with them.
 > **This file is the single source of truth for project state.** Update it at the end of every phase.
@@ -495,6 +495,9 @@ The nine DeadlineTracker flaws (F1–F9 in `ROLES_AND_RLS.md`): self-escalation 
 - ~~`fee_masters` has no management UI (Ph12).~~ **Resolved (2026-07-19, off-roadmap).** A "Rate Card" section on `/billing` now creates/edits/deactivates `fee_masters` rows through the UI (`billing.manage`-gated, `billing.view` can read); no hard delete, mirrors the clients/departments precedent. See §4.10.
 - **Invoice `place_of_supply`/`place_of_supply_state_code` are free-text inputs, not validated against a real Indian-states list (Ph12).** Matches the existing `client_addresses` convention (also free text), but means a typo'd state code silently produces a GST-invalid invoice — same accepted limitation `docs/planning/phase-12-notes.md` already notes for `issue_firm_invoice()` not validating `is_interstate` consistency.
 - **No receipt edit/delete action in the UI (Ph12).** The schema/RLS allow `billing.manage` to update/delete receipts (Phase 14's deferred item #2 already flags this as a fraud-surface needing an audit trail before it's exercised more) — the UI deliberately only exposes recording a new receipt, not correcting or removing one, so mistakes require direct DB access for now. Consistent with keeping the audit-trail gap from growing until Phase 14 addresses it.
+- **`inviteClientUserAction` reports success unconditionally even when the underlying Resend send fails (2026-07-23).** `sendEmail()` is fire-and-forget by design (Phase 11) — for most call sites that's fine (an in-app notification still landed), but a portal invite has no in-app fallback: a client who never receives the invite email is a dead onboarding with no visible symptom. Small, high-value fix candidate: surface a warning in the invite modal when the send fails, not a silent success.
+- **No rate limiting on `/forgot-password`, signup, invite-code lookup, or accept-invite (2026-07-23, consolidates the pre-existing item above).** Four public endpoints share this gap. Batch as ONE hardening pass in Phase 14 rather than fixing individually — fixing one in isolation would leave the others looking "already handled" when they aren't.
+- **Do not "fix" the forgot-password enumeration-safety pattern.** Its identical-response-regardless-of-account-existence behavior (§4.3) is intentional, not an oversight — a future session should not add account-existence signals to it. See `docs/DECISIONS.md`'s 2026-07-18 entry.
 
 ---
 
@@ -509,6 +512,12 @@ Phase list: 7 verify · 8 unify/delete · 9 schema · 10 compliance core · 11 c
 ---
 
 ## 8. Key decisions & rationale (cumulative — for future decision-making)
+
+> **See also `docs/DECISIONS.md`** — the same decision history, reordered chronologically
+> (dated, newest last) and extended with items after 2026-07-21 (the Phase 13 split, the
+> credentials-vault and WhatsApp deferrals with their revisit triggers) plus an
+> operational-knowledge runbook section. This table stays as the phase-indexed view;
+> `docs/DECISIONS.md` is the date-indexed view of the same facts.
 
 | Decision | Rationale | Phase |
 |---|---|---|
@@ -564,6 +573,8 @@ Phase list: 7 verify · 8 unify/delete · 9 schema · 10 compliance core · 11 c
 - `AGENTS.md` — Next.js 16 warning: consult `node_modules/next/dist/docs/` before writing framework code.
 - `src/lib/task-options.ts` — the stage-machine map; **must be kept in sync with `handle_task_stage()`** if the trigger ever changes.
 - `src/app/globals.css` — the design-system source of truth (Ph6): every color token, light + dark, with contrast-ratio comments. Rebrand the teal accent by editing the 4 `--color-accent*` lines here (root + `.dark`).
+- `docs/DECISIONS.md` — dated, chronological decision log (backfilled from §8 above, plus operational-knowledge runbook items and the 2026-07-23 Phase 13 split / credentials-vault / WhatsApp deferrals with revisit triggers).
+- `docs/deployment.md` — every Vercel Production environment variable this app reads, its correct value, and what breaks if it's missing or wrong.
 
 ---
 
