@@ -644,3 +644,58 @@ export interface UdinRegisterEntryWithRefs extends UdinRegisterEntry {
   signing_partner: Pick<Profile, 'id' | 'name'> | null;
   task: Pick<FirmTask, 'id' | 'title'> | null;
 }
+
+// ============================================
+// DSC register (Phase 13.2, migration 008) — staff-internal only, no
+// client_user read path. Reads AND custody movements are gated by the SAME
+// clients.view permission (partner bypass automatic); full-record
+// create/edit/deactivate is partner-only via get_user_role(), no
+// permission-catalog key. See migration 008's RLS section.
+// ============================================
+
+export interface DscRegisterEntry {
+  id: string;
+  firm_id: string;
+  client_id: string;
+  holder_name: string;
+  holder_designation: string | null;
+  issuing_authority: string;
+  dsc_class: string;
+  serial_number: string;
+  issued_on: string | null;
+  expires_on: string;
+  current_custodian_id: string | null;
+  physical_storage_location: string | null;
+  is_active: boolean;
+  notes: string | null;
+  last_expiry_alert_tier: string | null;
+  last_expiry_alert_sent_for_expiry: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DscRegisterEntryWithRefs extends DscRegisterEntry {
+  client: Pick<Client, 'id' | 'name'> | null;
+  custodian: Pick<Profile, 'id' | 'name'> | null;
+}
+
+export type DscMovementType = 'check_out' | 'check_in';
+
+export interface DscCustodyMovement {
+  id: string;
+  firm_id: string;
+  dsc_id: string;
+  movement_type: DscMovementType;
+  from_custodian_id: string | null;
+  to_custodian_id: string | null;
+  note: string | null;
+  recorded_by: string | null;
+  created_at: string;
+}
+
+export interface DscCustodyMovementWithRefs extends DscCustodyMovement {
+  from_custodian: Pick<Profile, 'id' | 'name'> | null;
+  to_custodian: Pick<Profile, 'id' | 'name'> | null;
+  recorder: Pick<Profile, 'id' | 'name'> | null;
+}

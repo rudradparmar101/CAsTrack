@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Receipt,
   BadgeCheck,
+  KeyRound,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -34,6 +35,7 @@ const adminNavItems = [
   { href: '/tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/compliance', label: 'Filing Status', icon: ShieldCheck },
   { href: '/udin', label: 'UDIN Register', icon: BadgeCheck },
+  { href: '/dsc', label: 'DSC Register', icon: KeyRound },
   { href: '/billing', label: 'Billing', icon: Receipt },
   { href: '/templates', label: 'Templates', icon: LayoutTemplate },
   { href: '/team', label: 'Team', icon: UsersRound },
