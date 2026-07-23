@@ -94,6 +94,7 @@ const EMAIL = {
   e0: `${TAG}.e0@example.com`,     // Firm A employee, EVERY permission key explicitly revoked
   ep: `${TAG}.ep@example.com`,     // Firm A employee, EVERY permission key explicitly granted
   edel: `${TAG}.edel@example.com`, // Firm A employee, throwaway DELETE target
+  udel: `${TAG}.udel@example.com`, // Firm A client_user, throwaway DELETE target (F3 probe — separate from UA1/UA2, which stay alive for the rest of the sweep)
   ua1: `${TAG}.ua1@example.com`,   // Firm A / client A1 portal user
   ua2: `${TAG}.ua2@example.com`,   // Firm A / client A2 (sibling) portal user
   pb: `${TAG}.pb@example.com`,     // Firm B partner
@@ -186,9 +187,14 @@ async function seed(admin) {
   const ua1Id = await ensureUser(admin, EMAIL.ua1, { name: 'UA1', role: 'client_user', firm_id: ID.firmA, client_id: ID.clientA1 });
   const ua2Id = await ensureUser(admin, EMAIL.ua2, { name: 'UA2', role: 'client_user', firm_id: ID.firmA, client_id: ID.clientA2 });
   const ub1Id = await ensureUser(admin, EMAIL.ub1, { name: 'UB1', role: 'client_user', firm_id: ID.firmB, client_id: ID.clientB1 });
+  const udelId = await ensureUser(admin, EMAIL.udel, { name: 'UDEL', role: 'client_user', firm_id: ID.firmA, client_id: ID.clientA1 });
   await up(admin, 'profiles', { id: ua1Id, firm_id: ID.firmA, name: 'UA1', email: EMAIL.ua1, role: 'client_user', client_id: ID.clientA1 });
   await up(admin, 'profiles', { id: ua2Id, firm_id: ID.firmA, name: 'UA2', email: EMAIL.ua2, role: 'client_user', client_id: ID.clientA2 });
   await up(admin, 'profiles', { id: ub1Id, firm_id: ID.firmB, name: 'UB1', email: EMAIL.ub1, role: 'client_user', client_id: ID.clientB1 });
+  // UDEL is a throwaway DELETE target for the F3 probe (migration 013) — kept
+  // separate from UA1/UA2, which stay alive and signed-in for the rest of
+  // this run's checks.
+  await up(admin, 'profiles', { id: udelId, firm_id: ID.firmA, name: 'UDEL', email: EMAIL.udel, role: 'client_user', client_id: ID.clientA1 });
 
   // Department membership: EV/E0/EP all in Firm A's GST dept only (never
   // income_tax) — this is what makes taskIncomeTax a genuine out-of-scope
@@ -370,7 +376,7 @@ async function seed(admin) {
   const psaId = await ensureUser(admin, EMAIL.psa, { name: 'PSA' });
   await up(admin, 'platform_admins', { user_id: psaId, note: `${TAG} seed` }, 'user_id');
 
-  return { paId, pa2Id, evId, e0Id, epId, edelId, pbId, evbId, ua1Id, ua2Id, ub1Id, psaId, gstA, incomeTaxA, gstB };
+  return { paId, pa2Id, evId, e0Id, epId, edelId, udelId, pbId, evbId, ua1Id, ua2Id, ub1Id, psaId, gstA, incomeTaxA, gstB };
 }
 
 async function putObjectIfAbsent(admin, objPath, body) {
@@ -511,23 +517,48 @@ async function main() {
     const { data, error } = await ev.from('profiles').select('id').eq('firm_id', ID.firmA);
     R('profiles: EV (staff) sees all firm-A profiles', !error && (data || []).length >= 6, error?.message || `rows: ${data?.length}`);
   }
+  // F3 FIX PROBE (migration 013): "Partners can remove profiles in their
+  // firm" now also excludes role = 'partner' from the DELETE target, on top
+  // of the pre-existing self-deletion guard. Four cases prove the exclusion
+  // is scoped exactly right — blocks the governance-sensitive target,
+  // leaves both other legitimate targets untouched.
   {
-    // The finding: profiles DELETE policy is firm_id + role=partner + id<>self
-    // — NO restriction on the TARGET's role. PA (partner) attempts to delete
-    // PA2 (a co-partner in the SAME firm).
+    // 1. Partner-on-partner: PA (partner) attempts to delete PA2 (a
+    // co-partner, same firm) — must now be REJECTED. This was the original
+    // F3 finding — PA succeeded here before the fix.
     const { data, error } = await pa.from('profiles').delete().eq('id', ids.pa2Id).select();
-    R('FINDING-CHECK profiles: PA (partner) DELETE on PA2 (a CO-PARTNER, same firm) — policy has no target-role exclusion',
-      !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+    const ok = !error && (data || []).length === 0;
+    R('F3 fix: PA (partner) is DENIED deleting PA2 (a CO-PARTNER, same firm) — target-role exclusion enforced',
+      ok, ok ? `rows deleted: 0` : `rows deleted: ${data?.length ?? 0} — gap still open (${error?.message || 'no error, but a row was deleted'})`);
   }
   {
-    // Legitimate case: partner removing an employee — expected to work (and
-    // does, by design, per project_context.md).
+    // 2. Partner removing an employee — the one clearly legitimate case —
+    // must still succeed, no regression.
     const { data, error } = await pa.from('profiles').delete().eq('id', ids.edelId).select();
-    R('profiles: PA (partner) DELETE on EDEL (an employee, same firm) succeeds (by design)', !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+    R('F3 fix: PA (partner) DELETE on EDEL (an employee, same firm) still SUCCEEDS (no regression)', !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
   }
   {
+    // 3. Self-deletion — already blocked by the pre-existing id <> auth.uid()
+    // guard, untouched by this migration; re-confirmed here.
     const { data, error } = await pa.from('profiles').delete().eq('id', ids.paId).select();
-    R('profiles: PA cannot delete HERSELF (id <> auth.uid() guard)', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+    R('F3 fix: PA still cannot delete HERSELF (id <> auth.uid() guard, unaffected by this migration)', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    // 4. NEW — client_user target: the exclusion is negative (role <>
+    // 'partner'), so a client_user profile is still a permitted DELETE
+    // target. Establishing this empirically, not assuming it: PA deletes
+    // UDEL (a throwaway client_user, kept separate from UA1/UA2 so the rest
+    // of this run's client_user-dependent checks are unaffected). This is
+    // recorded as INTENDED (see project_context.md/DECISIONS.md) — a
+    // partner revoking a client's portal login is a legitimate firm-
+    // administered cleanup action, structurally the lowest-risk of the
+    // three targets this policy could ever reach (no elevated privilege to
+    // lose, unlike a co-partner), and today the only path (even in
+    // principle) to ever cut off a client's portal access, since no
+    // dedicated "revoke portal access" UI exists yet.
+    const { data, error } = await pa.from('profiles').delete().eq('id', ids.udelId).select();
+    R('F3 fix: PA (partner) DELETE on UDEL (a client_user, same firm) still SUCCEEDS — negative exclusion permits this target, recorded as INTENDED',
+      !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
   }
 
   // ==========================================================================

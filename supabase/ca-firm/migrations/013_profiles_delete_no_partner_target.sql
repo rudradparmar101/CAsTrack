@@ -2,12 +2,10 @@
 -- Migration 013 — Phase 14.2, finding F3 (MEDIUM): block partner-on-partner
 -- profile deletion
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- ⚠ NOT YET APPLIED — drafted for Jay's review in Supabase Studio. Do not
--- apply via MCP or any automated path; this is a manual-apply-only gate,
--- same as every migration before it (001–012). Per the migration convention
--- (project_context.md header block / docs/DECISIONS.md): once applied and
--- confirmed, THIS FILE'S OWN HEADER must be updated to APPLIED <date> in the
--- same session that folds it into schema.sql.
+-- ✅ APPLIED 2026-07-23 — confirmed clean in Supabase Studio by Jay; the
+-- policy's qual shows the role <> 'partner' exclusion live. Folded into
+-- schema.sql in the same session per the migration convention
+-- (project_context.md header block / docs/DECISIONS.md).
 --
 -- Found by: docs/verification/phase-14-rls-sweep.md, finding F3 — check #25.
 -- `"Partners can remove profiles in their firm"` blocks self-deletion

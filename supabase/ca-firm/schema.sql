@@ -2032,12 +2032,19 @@ CREATE POLICY "Partners can update profiles in their firm"
   ON public.profiles FOR UPDATE TO authenticated
   USING (firm_id = public.get_user_firm_id() AND public.get_user_role() = 'partner');
 
+-- Migration 013 (F3 fix): `role <> 'partner'` blocks partner-on-partner
+-- removal — a governance-sensitive action requiring a deliberate mechanism,
+-- not a bare DELETE (mirrors migration 009's user_permissions scoping to
+-- role='employee' targets only). Employee and client_user targets remain
+-- deletable — both are legitimate firm-administered cleanup actions, neither
+-- carries the same governance weight as one partner removing another.
 CREATE POLICY "Partners can remove profiles in their firm"
   ON public.profiles FOR DELETE TO authenticated
   USING (
     firm_id = public.get_user_firm_id()
     AND public.get_user_role() = 'partner'
     AND id <> auth.uid()          -- a partner cannot delete themselves
+    AND role <> 'partner'         -- nor delete a co-partner (migration 013, F3)
   );
 
 -- ---------------------------------------------------------------------------
