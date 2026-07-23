@@ -740,11 +740,17 @@ justification, and the `check_rate_limit()` security-boundary statement are in
   pure anon client that `rate_limit_buckets` is unreadable (`permission denied`, the stronger of
   the two possible denials — same signature migration 017 established project-wide). `npm run
   build` + `npm run lint` both clean throughout.
-- **Live IP-trust check against production (praxida.in):** the specific failure mode named going
-  in was a limiter that resolves every request to one shared/constant identifier, which would
-  lock out every user at once the moment real traffic arrived — this cannot be tested against a
-  local dev server (always `127.0.0.1`) and needed the real Vercel deployment. Performed
-  post-push; result recorded in `docs/DECISIONS.md`'s corresponding entry.
+- **Live IP-trust check against production (praxida.in): PASSED.** The specific failure mode
+  named going in was a limiter that resolves every request to one shared/constant identifier,
+  which would lock out every user at once the moment real traffic arrived — this cannot be
+  tested against a local dev server (always `127.0.0.1`) and needed the real Vercel deployment.
+  Two real requests to `/portal/accept-invite` post-push — one plain, one with a manually
+  spoofed `X-Forwarded-For: 6.6.6.6` header — both landed in the SAME bucket, keyed to the real
+  outbound IP of the machine that made them (cross-checked independently against two public
+  IP-echo services), `count = 2`. The spoofed value never appears anywhere. Confirms both that
+  the resolved identifier genuinely distinguishes callers (not a constant) and that Vercel's
+  edge sets `x-forwarded-for` from the real connecting socket, not a client-suppliable value.
+  Full detail: `docs/DECISIONS.md`'s 2026-07-24 entry.
 
 ---
 

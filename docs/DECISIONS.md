@@ -1063,6 +1063,29 @@ open, deliberately, not oversight: whether `reviewer_id` reassignment should req
 new table) was handed to Jay to run himself, since it requires DDL the standing guardrail
 reserves for Studio.
 
+### 2026-07-24 — Live IP-trust verification against production (praxida.in): PASSED
+**Finding:** `x-forwarded-for`'s first entry, as used by `getClientIp()` in
+`src/lib/rate-limit.ts`, resolves to a real, distinct client IP on the live Vercel deployment and
+cannot be spoofed by a client-supplied header — confirmed empirically, not assumed, specifically
+because a limiter that resolved every request to one shared/constant identifier would lock out
+every user at once the moment real traffic arrived, and that failure mode is invisible against a
+local dev server (always `127.0.0.1`).
+**Method:** two real HTTPS requests to `https://praxida.in/portal/accept-invite?token=...` (a
+route wired to the `accept_invite_lookup` bucket) — one plain, one with a manually set
+`X-Forwarded-For: 6.6.6.6` header attached — then read `rate_limit_buckets` directly (service
+role) for that action.
+**Result:** both requests landed in the SAME bucket, `accept_invite_lookup:47.11.106.27:...`
+(`count = 2`) — `47.11.106.27` is the real outbound IP of the machine that made both requests
+(cross-checked independently against `ifconfig.me`/`icanhazip.com`, both agreeing). The spoofed
+`6.6.6.6` never appears anywhere. This proves two things at once: the identifier is a genuine,
+per-caller-distinguishing value (not `'unknown'` or any other constant — the specific failure
+mode this check existed to catch), and Vercel's edge sets `x-forwarded-for` from the real
+connecting socket rather than trusting whatever a client sends, exactly as reasoned in the
+migration/lib design (a client cannot open a raw connection directly to the origin function;
+Vercel's edge is the actual internet-facing TCP terminator).
+**Status:** verified, no follow-up action needed. Closes the one open item from the
+"public-endpoint rate limiting" entry below.
+
 ### 2026-07-24 — Login is exempt from public-endpoint rate limiting, deliberately, not overlooked
 **Decision:** `/login` is not wired to the new DB-backed rate limiter (migration 019), and this
 is recorded as a decision, not left as a silent gap in the implementation.
