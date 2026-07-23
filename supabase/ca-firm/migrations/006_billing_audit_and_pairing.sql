@@ -2,11 +2,14 @@
 -- Migration 006 — Phase 14 (Final RLS pass): close billing review findings
 -- 2-4 at the DB level
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- NOT YET APPLIED — present to Jay for approval first (same HUMAN gate as
--- migrations 001-005), apply via the Supabase SQL editor, read-only verify
--- with the new committed test suite (scripts/verify/09-billing-audit-and-pairing.mjs),
--- then this header gets updated and the change gets folded into schema.sql
--- (schema.sql stays the greenfield source of truth).
+-- ✅ APPLIED 2026-07-18 via the Supabase SQL editor (commit 45fa98c); folded
+-- into schema.sql in the same commit, verified with
+-- scripts/verify/09-billing-audit-and-pairing.mjs. This header was not
+-- updated at the time — corrected 2026-07-23 after Phase 14.1's RLS sweep
+-- found the live database didn't match this file's stale "not applied"
+-- status; see docs/verification/migration-006-reconciliation.md for the
+-- full investigation (every object below was re-verified live and matches
+-- this file exactly).
 --
 -- Closes docs/planning/phase-12-notes.md's Migration-004 review findings 2-4
 -- (finding 1 — client_invoices/client_invoice_items definer views excluding

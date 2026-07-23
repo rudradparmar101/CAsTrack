@@ -1,6 +1,21 @@
 # Project Context — CA Firm Management SaaS
 
-> **Last updated:** 2026-07-23 (**Phase 14.1 complete** — exhaustive probe-driven RLS
+> **Last updated:** 2026-07-23 (**Migration 006 reconciliation complete** — investigation-only
+> session, no DDL applied. Phase 14.1's ⚠ HUMAN item is resolved: migration 006 **was fully
+> applied on 2026-07-18** (commit `45fa98c`) and correctly folded into `schema.sql` in the same
+> commit — the "drafted, not applied" belief traced to the migration file's own header comment,
+> which was never updated to match its own commit message after the apply succeeded. Every
+> object migration 006 defines was re-verified live this session and matches exactly; no
+> related drift found in migrations 004/005/007/008/009 either — `schema.sql` is a truthful
+> record of the live DB. Full investigation: `docs/verification/migration-006-reconciliation.md`.
+> Doc-only corrections applied same-day: migration 006's header now says APPLIED; this file,
+> `docs/ROADMAP.md`, and `docs/DECISIONS.md` corrected wherever they described 006 as
+> unapplied; **new migration convention added** (see §9) closing the structural gap that
+> caused this — the session that folds an applied migration into `schema.sql` must also update
+> that migration's own header to say APPLIED, not just update the tracking docs. One
+> unrelated, low-risk finding (`client_outstanding` retains un-revoked `anon` DML grants)
+> stays in Phase 14.2's scope, not fixed here. Previous entry, same day — **Phase 14.1
+> complete** — exhaustive probe-driven RLS
 > verification sweep, verification-only, no fixes applied. `scripts/verify/14-rls-sweep.mjs`
 > (committed, 116/116 assertions matched their predicted outcome) swept 30 of 33 tables × a
 > full role matrix (partner/employee-defaults/employee-zero-perms/employee-all-perms/
@@ -16,9 +31,10 @@
 > documents are visible firm-wide to any clients.view holder, not department-scoped), plus a
 > ⚠ HUMAN documentation-accuracy item: migration 006 (receipt_history + nullable
 > receipts.invoice_id) is confirmed LIVE on the project despite this file, ROADMAP.md, and
-> DECISIONS.md all describing it as drafted-not-applied. See §6 (updated) and
-> `docs/ROADMAP.md`'s new Phase 14.1/14.2/14.3 split. Nothing was fixed this session — see
-> Phase 14.2/14.3 for the fix-session scope. Previous entry, same day — **Phase 13.3
+> DECISIONS.md all describing it as drafted-not-applied. **Resolved same-day — see the
+> reconciliation entry above: migration 006 was applied 2026-07-18, the docs were stale.** See
+> §6 (updated) and `docs/ROADMAP.md`'s new Phase 14.1/14.2/14.3 split. Nothing was fixed this
+> session — see Phase 14.2/14.3 for the fix-session scope. Previous entry, same day — **Phase 13.3
 > complete** — per-employee permissions editor:
 > Supabase MCP was unavailable at session start, so Step 0's live-RLS check was closed
 > empirically instead via a new committed probe script, `scripts/verify/12-permissions-ui.mjs`,
@@ -45,6 +61,8 @@
 > **Repo:** `CA prod 1/` — a local copy of the **DeadlineTracker** codebase (a Next.js + Supabase multi-tenant deadline-tracking SaaS, fully documented in `REFERENCE_ARCHITECTURE.md`) being converted in place into a **Chartered Accountant Firm Management SaaS for the Indian market**, now rebranded **CA Firm Manager**.
 > **Version control:** git, pushed to a GitHub remote (`origin/main`). ⚠ As of 2026-07-21: `docs/ROADMAP.md` and `supabase/ca-firm/migrations/006_billing_audit_and_pairing.sql` have pre-existing uncommitted working-tree changes that look like an accidental revert/truncation vs. `origin/main` (found at the start of this session, not caused by it — see §4.13's last bullet). Left untouched; Jay should check `git diff` on those two files before doing anything else with them.
 > **This file is the single source of truth for project state.** Update it at the end of every phase.
+
+> **Migration convention (added 2026-07-23, after the migration-006 reconciliation — see §4.17):** every `supabase/ca-firm/migrations/NNN_*.sql` file opens with a "NOT YET APPLIED" header, written before the outcome is known. Once Jay confirms a migration applied cleanly in Studio, the SAME session that folds it into `schema.sql` **must also edit that migration file's own header** to `✅ APPLIED <date>` — updating `project_context.md`/`docs/ROADMAP.md`/`docs/DECISIONS.md` is not sufficient by itself. Migration 006 was applied 2026-07-18 and folded into `schema.sql` correctly in the same commit, but its in-file header was never touched — every tracking doc then took that stale header at face value for five days until Phase 14.1's empirical RLS sweep caught the mismatch. **Check the migration file's own header, not just the tracking docs, before assuming a migration's applied status** — the docs can be wrong the exact same way the file can. (Migration 008's header has the identical stale-header gap — flagged, not yet corrected; see §4.17.)
 
 > **Positioning constraint (2026-07-16, architectural, not marketing):** This is not a filing tool. It is deadline and notice discipline for an Indian CA firm. Features requiring GST/IT portal credential access or GSP/ERI licensing are out of scope by decision, not by backlog. See `docs/planning/scope-decision.md` and the "Deliberate non-goals" section of `docs/ROADMAP.md`.
 
@@ -481,9 +499,20 @@ Every table in the schema × a full role matrix (partner, employee-defaults, emp
   - **F3 (MEDIUM):** `profiles` DELETE has no target-role exclusion — a partner can delete a co-partner's profile (only self-deletion is blocked).
   - **F4 (MEDIUM):** `tasks.assign` (previously flagged in §6 item 5 as "no RLS branch, not yet proven") now empirically confirmed: reassignment rides `tasks.update_department` alone, no separate check exists anywhere.
   - **F5 (LOW):** task-less documents are visible firm-wide to any `clients.view` holder (the employee default), not department-scoped — the read-side reach of the already-flagged Ph3 relaxation, now precisely characterized.
-  - **⚠ HUMAN documentation-accuracy item:** migration 006 (`receipt_history` + nullable `receipts.invoice_id`) is confirmed **live** on the production project via direct `information_schema`/`pg_policies` queries, despite this file, `docs/ROADMAP.md`, and `docs/DECISIONS.md` all describing it as drafted-not-applied. This session's own instructions said "do not touch migration 006" on the premise it was unapplied — the premise doesn't match reality. Needs a human reconciliation before Phase 14.3 can know its actual remaining scope.
+  - **⚠ HUMAN documentation-accuracy item — RESOLVED 2026-07-23, same day:** migration 006 (`receipt_history` + nullable `receipts.invoice_id`) was confirmed **live** on the production project via direct `information_schema`/`pg_policies` queries, despite this file, `docs/ROADMAP.md`, and `docs/DECISIONS.md` all describing it as drafted-not-applied. The follow-up reconciliation session found it was applied 2026-07-18 (commit `45fa98c`) and correctly folded into `schema.sql` in the same commit — the migration file's own header was simply never updated to say so. See §4.17 and `docs/verification/migration-006-reconciliation.md`.
 - **Why the sweep, not just a policy read:** Supabase MCP was available this session (unlike 13.3) and was used to *enumerate* schema objects (table list, function list, live column/policy state) — but every behavioral claim still required a real signed-in query. This is what caught `apply_receipts_to_invoice()`, a function not named anywhere in this project's prior known-risk lists, by mechanically asking "does every SECURITY DEFINER function's body check anything before it acts?" rather than checking only the functions that seemed important.
-- **Not a fix session, by explicit instruction.** `docs/ROADMAP.md`'s Phase 14 is now split into 14.1 (this sweep, done) / 14.2 (fix session for F0–F5) / 14.3 (migration 006 reconciliation, ⚠ HUMAN gate, then the pre-existing receipt-audit-trail item).
+- **Not a fix session, by explicit instruction.** `docs/ROADMAP.md`'s Phase 14 is now split into 14.1 (this sweep, done) / 14.2 (fix session for F0–F5) / 14.3 (migration 006 reconciliation — resolved same-day, see §4.17).
+
+### 4.17 Migration 006 reconciliation (2026-07-23) — fully applied 2026-07-18, docs were stale
+
+Investigation-only session (no DDL applied) triggered by Phase 14.1's ⚠ HUMAN finding. Every object migration 006 defines — `receipts.invoice_id` nullability + its exact column comment, `guard_receipt()`, `handle_receipt_change()`, the rebuilt `client_outstanding` view, the `receipt_history` table + indexes + RLS + policies, `log_receipt_change()` + its trigger, and `has_permission()`'s billing.manage/view pairing — was checked live via read-only Supabase MCP queries (`information_schema`, `pg_get_functiondef`, `pg_get_viewdef`, `pg_get_triggerdef`, `pg_policies`) and matches the migration's own text **exactly**, including inline comments that name "migration 006" and specific review-finding numbers.
+
+- **Which scenario, with evidence:** `git log --follow` on the migration file shows exactly one commit, `45fa98c` (2026-07-18), whose own message states: *"Applied to the live Supabase project via Studio; folded into schema.sql in the same change per the migrations-land-twice rule."* `git show --stat` confirms both the migration file and `schema.sql` changed together in that commit. The migration file was authored from this project's standard pre-apply template (the same "NOT YET APPLIED" boilerplate every migration opens with) — and that in-file header was never edited afterward to match the commit message's own claim, even within the same commit. Every downstream doc (this file, `docs/ROADMAP.md`, and a `docs/DECISIONS.md` entry added five days later on 2026-07-23) inherited the stale header at face value instead of checking the live database or the commit message. This is scenario (a) — fully applied, undocumented — confirmed directly, not inferred from schema-matching alone.
+- **Drift check (Step 3 of the investigation):** migrations 004, 005, 007, 008, and 009 were spot-checked the same way (privileges, triggers, columns, RLS policies) — no divergence found anywhere; `schema.sql` is a truthful record of the live database everywhere this session looked.
+- **One low-risk side-finding, not part of migration 006's drift:** `client_outstanding` retains un-revoked `anon` INSERT/UPDATE/DELETE grants — but this matches what `schema.sql`'s own REVOKE statement says (it only ever targeted `authenticated`, in both migrations 005 and 006), so it's a gap in the migration text itself, not an application failure. Low practical risk (`security_invoker` + RLS default-deny). Folded into Phase 14.2's existing "audit all default-privilege grants" item, scope widened to include `anon`.
+- **Findings list impact:** F0 and F1-RPC (both from Phase 14.1) are untouched by migration 006 — neither is caused by or related to any object it defines. One ROADMAP item *resolves*: Phase 14.3's "receipt mutation audit trail" task is already satisfied by the live `receipt_history` table.
+- **Structural fix, not just a one-off correction (per Jay's explicit instruction):** the root cause was a missing step in this project's own migration convention — see §9's "migration header convention" entry. From now on, the session that folds a confirmed-applied migration into `schema.sql` must ALSO update that migration file's own header to say `✅ APPLIED <date>`, not just update the tracking docs. (**Note:** migration 008's header was found, in passing, to have the exact same stale-header gap — it still says "NOT YET APPLIED" despite `project_context.md` §4.14 stating it was applied clean in Studio. Flagged for Jay; not corrected this session, since it was outside this session's approved scope.)
+- **Full investigation, doc-only corrections, and the one DDL item left for Phase 14.2:** `docs/verification/migration-006-reconciliation.md`.
 
 ---
 
@@ -553,7 +582,7 @@ Every table in the schema × a full role matrix (partner, employee-defaults, emp
 13. **[Ph14.1, F2, HIGH] Staff storage policy has no task/department scoping at all — mirrors the historical client-side portal-isolation.md #7, but for staff.** `"Staff can read their firm's document files"` checks only firm membership, not `staff_can_access_task()`/`clients.view`/the `documents` table. Empirically confirmed: an employee correctly denied at the `documents` TABLE layer for a document on a different department's task could still download its bytes and list its folder via raw Storage API. Architectural decision needed (per `docs/verification/phase-14-rls-sweep.md` §5, F2): document this as intentional firm-wide staff access, or rewrite the policy to join through `documents` like the client-side policy already does.
 14. **[Ph14.1, F3, MEDIUM] `profiles` DELETE policy has no target-role exclusion — a partner can delete a co-partner's profile.** Empirically confirmed: PA successfully deleted PA2 (a second, same-firm partner), not just an employee. Needs Jay's call on whether partner-on-partner removal should be possible at all, then a migration adding a target-role exclusion if not.
 15. **[Ph14.1, F5, LOW] Task-less documents are visible firm-wide to any `clients.view` holder, not department-scoped.** The Ph3 relaxation's read-side reach, now precisely characterized: an employee with the default `clients.view=true` can see a task-less document for a client they have ZERO task or department relationship to, firm-wide. Lower severity since `clients.view` is the employee default specifically to allow broad client visibility — still inconsistent with the department-scoping model used everywhere else. Decide whether to add department-scoping (would need a schema change, since clients don't carry a department today) or formally accept firm-wide reach.
-16. **[Ph14.1, ⚠ HUMAN] Migration 006 is LIVE on the production project despite this file, `docs/ROADMAP.md`, and `docs/DECISIONS.md` all describing it as drafted-not-applied.** Empirically confirmed: `receipts.invoice_id` is nullable live, and `receipt_history` exists live with RLS enabled and pre-existing rows, matching migration 006's design exactly. Needs a human reconciliation of the migration-006 file against live `pg_policies`/`information_schema` before Phase 14.3 can know its actual remaining scope — see `docs/ROADMAP.md` Phase 14.3 and `docs/verification/phase-14-rls-sweep.md` §5.
+16. ~~[Ph14.1, ⚠ HUMAN] Migration 006 is LIVE on the production project despite this file, `docs/ROADMAP.md`, and `docs/DECISIONS.md` all describing it as drafted-not-applied.~~ **Resolved (2026-07-23, same day).** Migration 006 was applied 2026-07-18 (commit `45fa98c`) and correctly folded into `schema.sql` in the same commit — the migration file's own header was simply never updated to match. No related drift found in migrations 004/005/007/008/009 either; `schema.sql` is a truthful record of the live DB. See §4.17 and `docs/verification/migration-006-reconciliation.md`. **New process fix:** the migration-header-update step is now an explicit part of this project's migration convention (§9) specifically so this class of gap can't recur.
 
 ### Security items (already fixed by design — don't regress)
 

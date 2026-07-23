@@ -285,7 +285,7 @@ confirmed by Jay before any further work.
       clients.view holder, not department-scoped), plus a ⚠ HUMAN documentation-accuracy item:
       migration 006 (receipt_history + nullable receipts.invoice_id) is confirmed LIVE on the
       project despite project_context.md/DECISIONS.md describing it as drafted-not-applied —
-      needs reconciliation before 14.3 can know its actual remaining scope.
+      **resolved same-day, see Phase 14.3 below.**
 - [ ] 14.1b (not this session): probe `document_versions`, `firm_invoice_items`,
       `firm_invoice_counters`, `subscription_invoices` (zero coverage so far); a real
       super-admin positive-path check; `lookup_client_invitation()`; the doc↔task
@@ -311,18 +311,24 @@ confirmed by Jay before any further work.
 - [ ] guard_firm_invoice frozen-column list omits status / amount_received / tds_received — a
       caller that bypasses RLS can corrupt settlement state; needs the session-variable
       pattern to allow only apply_receipts_to_invoice() (ties into F0's fix).
-- [ ] Supabase default privileges grant authenticated full DML on new public objects; PUBLIC != authenticated. Every CREATE VIEW and CREATE TABLE must explicitly REVOKE from authenticated, or rely on RLS. Audit all objects for this class of bug — 004's client views were the first instance (fixed in migration 005 for client_invoices/client_invoice_items/client_outstanding; other objects not yet audited).
+- [ ] Supabase default privileges grant authenticated full DML on new public objects; PUBLIC != authenticated. Every CREATE VIEW and CREATE TABLE must explicitly REVOKE from authenticated, or rely on RLS. Audit all objects for this class of bug — 004's client views were the first instance (fixed in migration 005 for client_invoices/client_invoice_items/client_outstanding; other objects not yet audited). **Widened 2026-07-23 (migration-006 reconciliation):** also audit `anon`, not just `authenticated` — `client_outstanding` was found to retain un-revoked `anon` INSERT/UPDATE/DELETE grants (neither migration 005 nor 006's REVOKE ever targeted `anon`, only `authenticated`); low risk in practice (`security_invoker` + RLS default-deny) but a one-line REVOKE closes it. See `docs/verification/migration-006-reconciliation.md`.
 - [ ] firms ON DELETE CASCADE to firm_invoices is blocked by guard_firm_invoice_no_delete when any invoice is non-draft, so a firm with issued invoices cannot be hard-deleted through any path. This is desirable (statutory retention) but must be resolved deliberately: adopt firm soft-delete (mirroring the F6 client soft-delete pattern) as part of tenant lifecycle / Phase 15, so hard-delete and this cascade never occur. Until then, firm hard-deletion is effectively disabled for billing-active firms.
 
-### Phase 14.3 — migration 006 reconciliation + receipt mutation audit trail [ ] ⚠ HUMAN GATE
-- [ ] ⚠ HUMAN: reconcile migration 006's on-disk file against live `pg_policies`/
-      `information_schema` state — Phase 14.1 found `receipt_history` + nullable
-      `receipts.invoice_id` already LIVE despite docs saying unapplied. Determine what (if
-      anything) from 006 is still genuinely pending before treating this phase as "apply
-      migration 006."
-- [ ] receipt mutation audit trail — receipts are DELETE/UPDATE-able by billing.manage;
-      `receipt_history` (migration 006, confirmed live) already provides trigger-only history —
-      confirm this satisfies Phase 12 review finding 3, or whether more is needed.
+### Phase 14.3 — migration 006 reconciliation [x] (2026-07-23) + receipt mutation audit trail [x]
+- [x] Migration 006 reconciliation — **resolved.** Investigation-only session (no DDL applied)
+      found migration 006 was fully applied 2026-07-18 (commit `45fa98c`) and correctly folded
+      into `schema.sql` in the same commit — the migration file's own header was simply never
+      updated to say so, and every tracking doc took that stale header at face value. Every
+      object migration 006 defines was re-verified live and matches exactly; no related drift
+      found in migrations 004/005/007/008/009 either. Corrected 2026-07-23: migration 006's
+      header now says APPLIED; project_context.md/DECISIONS.md corrected; a new migration
+      convention added (project_context.md header block + docs/DECISIONS.md) requiring the
+      folding session to also update the migration file's own header, not just the tracking
+      docs. Full investigation: `docs/verification/migration-006-reconciliation.md`.
+- [x] receipt mutation audit trail — **already satisfied.** `receipt_history` (migration 006,
+      confirmed live and correctly RLS-gated, trigger-only-writable) logs every receipt
+      INSERT/UPDATE/DELETE with a before/after JSONB snapshot — this was the ask in Phase 12
+      review finding 3. No further work needed here.
 - [ ] Idempotent policy-recreator script; expand the committed role-JWT suite (14-rls-sweep.mjs
       + prior scripts) as the ongoing full-matrix regression check; wire as an npm script.
 

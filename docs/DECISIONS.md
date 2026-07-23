@@ -638,11 +638,57 @@ lets a partner remove a co-partner, no target-role exclusion), F4 (medium — `t
 confirmed to have no RLS branch anywhere), F5 (low — task-less documents are visible
 firm-wide to any `clients.view` holder, not department-scoped), plus a ⚠ HUMAN
 documentation-accuracy item: migration 006 is confirmed **live** on the project despite this
-file (see the now-corrected entry above), `docs/ROADMAP.md`, and `project_context.md` all
-having described it as drafted-not-applied.
-**Status:** active, unfixed. See `docs/ROADMAP.md` Phase 14.2/14.3 for the fix-session scope.
-This entry supersedes the "Migration 006 ... is drafted, not applied" claim in the
-operational-knowledge note below — see that note's own correction.
+file, `docs/ROADMAP.md`, and `project_context.md` all having described it as
+drafted-not-applied. **This item was resolved the same day — see the next entry below.**
+**Status:** F0–F5 active, unfixed — see `docs/ROADMAP.md` Phase 14.2 for the fix-session
+scope. The migration-006 documentation-accuracy item is resolved (see below).
+
+### 2026-07-23 — Migration 006 reconciliation: fully applied 2026-07-18, docs were stale
+**Decision:** migration 006 is confirmed fully applied and requires no further DDL action —
+every object it defines (`receipts.invoice_id` nullability + its column comment,
+`guard_receipt()`, `handle_receipt_change()`, the rebuilt `client_outstanding` view, the
+`receipt_history` table + indexes + RLS + policies, `log_receipt_change()` + its trigger, and
+`has_permission()`'s billing.manage/view pairing) was independently re-verified live this
+session via read-only Supabase MCP queries and matches the migration's own text exactly,
+including inline comments naming "migration 006" and specific review-finding numbers.
+**Rationale / evidence:** `git log --follow` on the migration file shows exactly one commit,
+`45fa98c` (2026-07-18), whose own message states plainly: "Applied to the live Supabase
+project via Studio; folded into schema.sql in the same change per the migrations-land-twice
+rule." `git show --stat` confirms the migration file and `schema.sql` changed together in
+that commit. The root cause of the five-day (then further-extended) documentation gap: the
+migration file was authored from this project's standard pre-apply template — the same
+"NOT YET APPLIED" boilerplate every migration opens with — and that in-file header was never
+edited afterward to match the commit's own message, even within the same commit. Every
+downstream document (`project_context.md`, `docs/ROADMAP.md`, and this file's own entry added
+five days later) took the stale header at face value instead of checking the live database or
+the commit message. Migrations 004, 005, 007, 008, and 009 were also spot-checked for related
+drift (privileges, triggers, columns, RLS policies) — none found; `schema.sql` is a truthful
+record of the live database everywhere this session looked. One low-risk side-finding not
+caused by migration 006 itself: `client_outstanding` retains un-revoked `anon` DML grants
+(matches what `schema.sql`'s own REVOKE statement already says — a gap in the migration text,
+not in its application), folded into Phase 14.2's existing default-privileges audit item.
+**Status:** resolved. Full investigation: `docs/verification/migration-006-reconciliation.md`.
+Doc-only corrections applied same-day to migration 006's header, `project_context.md`,
+`docs/ROADMAP.md`, and this file. See the next entry for the structural fix.
+
+### 2026-07-23 — New migration convention: the folding session must also update the migration file's own header
+**Decision:** from now on, whenever Jay confirms a migration applied cleanly in Studio, the
+same session that folds it into `schema.sql` must ALSO edit that migration file's own header
+to `✅ APPLIED <date>` — updating the tracking docs (`project_context.md`/`docs/ROADMAP.md`/
+this file) is necessary but not sufficient on its own.
+**Rationale:** this is the exact gap that caused the migration-006 reconciliation above.
+Migration 006 was genuinely applied and correctly folded into `schema.sql` in one commit, but
+that same commit left the migration file's own "NOT YET APPLIED" header untouched — and every
+later session (including the one that first wrote this file's operational-knowledge note
+about migration 006, and Phase 14.1's RLS sweep five days after that) trusted the header
+instead of the live database. A tracking doc describing a migration as applied is only as
+reliable as the last person who remembered to update it; the migration file's own header,
+checked in the same commit as the fold, is much harder to let drift, because it sits right
+next to the DDL it describes. **Migration 008's header has the identical gap** (still says
+"NOT YET APPLIED" despite `project_context.md` describing it as applied clean in Studio) —
+noted, not corrected as part of this decision (out of scope for the session that found it).
+**Status:** active. Applies to every migration from here forward; migration 006's header was
+corrected same-day as the first application of this rule.
 
 ---
 
@@ -684,26 +730,25 @@ environment-variable reference these point into.
   `apply_migration` — ever. The human-applies-migrations-in-Studio gate (the same ⚠ HUMAN
   pattern used for every migration 001–007 above) is unchanged by having MCP access; MCP
   does not grant a bypass.
-- **⚠ CORRECTED 2026-07-23 (Phase 14.1) — migration 006's on-disk "drafted, not applied"
-  status does NOT match the live database.** This note originally said migration 006
-  (billing audit + pairing) was drafted and unapplied, awaiting the same Studio gate as
-  every prior migration. Phase 14.1's exhaustive RLS sweep queried live
-  `information_schema`/`pg_policies` directly and found `receipt_history` already exists
-  live with RLS enabled and pre-existing rows, and `receipts.invoice_id` is already
-  nullable live — both exactly matching migration 006's design. So at least part of
-  migration 006 IS applied on the live project, contradicting this note, `docs/ROADMAP.md`,
-  and `project_context.md` (all now updated to flag this as a ⚠ HUMAN reconciliation item,
-  not corrected outright, since it's not yet known whether migration 006 is fully or only
-  partially applied). The original truncation note below is still accurate as a *separate*
-  fact (the working-tree file was found truncated on 2026-07-21) — the two facts together
-  mean: don't trust the on-disk migration 006 file's completeness OR its "unapplied" status
-  without checking the live database first. On 2026-07-21 it was found accidentally
-  truncated to near-empty in the working tree (alongside a similarly-truncated
-  `docs/ROADMAP.md`) — restored from `origin/main`. **Do not treat a local truncation of
-  this file as an intentional edit** — verify against `origin/main` before assuming any
-  local state of migration 006 is meaningful. See `docs/verification/phase-14-rls-sweep.md`
-  §5 for the full empirical finding and `docs/ROADMAP.md` Phase 14.3 for the reconciliation
-  task.
+- **⚠ RESOLVED 2026-07-23 — migration 006 is fully applied (2026-07-18); this note's original
+  "drafted, not applied" claim was stale, not a live-database problem.** This note originally
+  said migration 006 (billing audit + pairing) was drafted and unapplied, awaiting the same
+  Studio gate as every prior migration. Phase 14.1's exhaustive RLS sweep found
+  `receipt_history` and nullable `receipts.invoice_id` live and flagged the contradiction as a
+  ⚠ HUMAN item; a same-day follow-up reconciliation session confirmed via `git log` that
+  migration 006 was applied 2026-07-18 (commit `45fa98c`, whose own message says so) and
+  every object it defines matches the live database exactly — full application, not partial.
+  The root cause: the migration file's own header was never updated to say APPLIED, and every
+  downstream doc (including this note) trusted that stale header instead of checking the live
+  database or the commit message. See `docs/verification/migration-006-reconciliation.md` for
+  the full investigation, and the new "migration convention" decision entry above (this
+  project now requires the folding session to also update the migration file's own header, not
+  just the tracking docs, specifically to prevent this recurring). The truncation note below
+  is a separate, still-accurate fact: on 2026-07-21 the migration 006 file (and
+  `docs/ROADMAP.md`) were found accidentally truncated to near-empty in the working tree —
+  restored from `origin/main`. **Do not treat a local truncation of this file as an
+  intentional edit** — verify against `origin/main` before assuming any local state of
+  migration 006 is meaningful.
 
 ---
 
