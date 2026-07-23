@@ -22,22 +22,44 @@ import type { ActionResult } from '@/lib/types';
  *
  * Storage: bucket 'client-documents', path {firm_id}/{client_id}/{document_id}/
  * {uuid}.{ext} — matches the storage RLS policies in schema.sql §12. Downloads
- * use 1-hour signed URLs generated server-side (DeadlineTracker pattern).
+ * use 1-hour signed URLs generated server-side (DeadlineTracker pattern),
+ * always with `{ download: <name> }` so Supabase serves Content-Disposition:
+ * attachment — see the audit's M1.
+ *
+ * FILE TYPE IS DECIDED BY THE SERVER, FROM THE BYTES (audit finding M1).
+ * `file.type` and `file.name`'s extension are attacker-controlled and are
+ * never used for the storage object's content type or path — `detectFileType()`
+ * in ./file-types.ts sniffs the leading bytes against an allow-list and
+ * returns the canonical extension + content type used below.
  */
 
-const DOCUMENTS_BUCKET = 'client-documents';
-const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024; // 10MB, mirroring task attachments
+import { detectFileType } from './file-types';
+import { MAX_DOCUMENT_SIZE, formatMaxDocumentSize } from './limits';
 
-function storagePath(firmId: string, clientId: string, documentId: string, fileName: string) {
-  const ext = fileName.includes('.') ? fileName.split('.').pop() : undefined;
-  return `${firmId}/${clientId}/${documentId}/${crypto.randomUUID()}${ext ? `.${ext}` : ''}`;
+const DOCUMENTS_BUCKET = 'client-documents';
+
+function storagePath(firmId: string, clientId: string, documentId: string, ext: string) {
+  return `${firmId}/${clientId}/${documentId}/${crypto.randomUUID()}.${ext}`;
 }
 
-function getValidFile(formData: FormData): { file: File } | { error: string } {
+/**
+ * Presence + size + CONTENT-TYPE validation, in that order. Returns the
+ * server's own verdict on the file's type; callers must use `detected`, never
+ * `file.type`/`file.name`.
+ */
+async function getValidFile(
+  formData: FormData
+): Promise<{ file: File; detected: { ext: string; contentType: string } } | { error: string }> {
   const file = formData.get('file') as File | null;
   if (!file || file.size === 0) return { error: 'No file selected.' };
-  if (file.size > MAX_DOCUMENT_SIZE) return { error: 'File exceeds the 10MB size limit.' };
-  return { file };
+  if (file.size > MAX_DOCUMENT_SIZE) {
+    return { error: `File exceeds the ${formatMaxDocumentSize()} size limit.` };
+  }
+
+  const detection = await detectFileType(file);
+  if (!detection.ok) return { error: detection.error };
+
+  return { file, detected: detection.type };
 }
 
 function revalidateDocumentViews(clientId: string, taskId?: string | null) {
@@ -61,9 +83,9 @@ export async function uploadDocumentAction(
 
   if (!clientId) return { success: false, error: 'Missing client.' };
 
-  const fileCheck = getValidFile(formData);
+  const fileCheck = await getValidFile(formData);
   if ('error' in fileCheck) return { success: false, error: fileCheck.error };
-  const { file } = fileCheck;
+  const { file, detected } = fileCheck;
 
   let visibleToClient = true;
   if (profile.role === 'client_user') {
@@ -111,11 +133,12 @@ export async function uploadDocumentAction(
     return { success: false, error: docError?.message || 'Failed to create the document.' };
   }
 
-  // 2. Upload the physical file.
-  const filePath = storagePath(profile.firm_id, clientId, doc.id, file.name);
+  // 2. Upload the physical file. Both the path extension and the stored
+  //    content type come from the SERVER's detection, never from the client.
+  const filePath = storagePath(profile.firm_id, clientId, doc.id, detected.ext);
   const { error: uploadError } = await supabase.storage
     .from(DOCUMENTS_BUCKET)
-    .upload(filePath, file, { contentType: file.type || 'application/octet-stream' });
+    .upload(filePath, file, { contentType: detected.contentType });
 
   if (uploadError) {
     // Roll back the document row ("uploaders can delete their own pending
@@ -131,7 +154,7 @@ export async function uploadDocumentAction(
     version_number: 1,
     file_name: file.name,
     file_path: filePath,
-    file_type: file.type || 'application/octet-stream',
+    file_type: detected.contentType,
     file_size: file.size,
     uploaded_by: userId,
   });
@@ -191,9 +214,9 @@ export async function uploadDocumentVersionAction(
 
   if (!documentId) return { success: false, error: 'Missing document.' };
 
-  const fileCheck = getValidFile(formData);
+  const fileCheck = await getValidFile(formData);
   if ('error' in fileCheck) return { success: false, error: fileCheck.error };
-  const { file } = fileCheck;
+  const { file, detected } = fileCheck;
 
   if (profile.role !== 'client_user' && profile.role !== 'partner') {
     const { data: allowed } = await supabase.rpc('has_permission', {
@@ -215,11 +238,11 @@ export async function uploadDocumentVersionAction(
   if (!doc) return { success: false, error: 'Document not found.' };
 
   const note = ((formData.get('note') as string) || '').trim() || null;
-  const filePath = storagePath(profile.firm_id, doc.client_id, doc.id, file.name);
+  const filePath = storagePath(profile.firm_id, doc.client_id, doc.id, detected.ext);
 
   const { error: uploadError } = await supabase.storage
     .from(DOCUMENTS_BUCKET)
-    .upload(filePath, file, { contentType: file.type || 'application/octet-stream' });
+    .upload(filePath, file, { contentType: detected.contentType });
 
   if (uploadError) {
     return { success: false, error: uploadError.message };
@@ -231,7 +254,7 @@ export async function uploadDocumentVersionAction(
     version_number: doc.current_version + 1,
     file_name: file.name,
     file_path: filePath,
-    file_type: file.type || 'application/octet-stream',
+    file_type: detected.contentType,
     file_size: file.size,
     note,
     uploaded_by: userId,

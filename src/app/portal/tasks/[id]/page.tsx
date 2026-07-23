@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import { format } from 'date-fns';
 import { ArrowLeft, Building2, Calendar, Hourglass } from 'lucide-react';
 import { getAuthContext } from '@/lib/auth';
+import { createDocumentDownloadUrl } from '@/lib/documents/signed-url';
 import { Card } from '@/components/ui/card';
 import { StageBadge } from '@/components/task/stage-badge';
 import { TaskComments } from '@/components/task/task-comments';
@@ -17,7 +18,6 @@ import type {
   FirmTaskCommentWithAuthor,
 } from '@/lib/types';
 
-const DOCUMENTS_BUCKET = 'client-documents';
 
 interface PortalTaskPageProps {
   params: Promise<{ id: string }>;
@@ -69,10 +69,12 @@ export default async function PortalTaskPage({ params }: PortalTaskPageProps) {
       ...doc,
       versions: await Promise.all(
         (doc.versions || []).map(async (version) => {
-          const { data: signed } = await supabase.storage
-            .from(DOCUMENTS_BUCKET)
-            .createSignedUrl(version.file_path, 3600);
-          return { ...version, signedUrl: signed?.signedUrl ?? null };
+          const signedUrl = await createDocumentDownloadUrl(
+            supabase,
+            version.file_path,
+            version.file_name
+          );
+          return { ...version, signedUrl };
         })
       ),
     }))

@@ -1,10 +1,10 @@
 'use server';
 
 import { getAuthProfile } from '@/lib/auth';
+import { createDocumentDownloadUrl } from '@/lib/documents/signed-url';
 import { PORTAL_TASKS_PAGE_SIZE, PORTAL_DOCUMENTS_PAGE_SIZE } from '@/lib/pagination';
 import type { ActionResultWithData, ClientDocumentWithDetails, FirmTask } from '@/lib/types';
 
-const DOCUMENTS_BUCKET = 'client-documents';
 
 /** Portal list pagination (Phase 11) — mirrors /tasks' fetchMoreTasksAction
  *  shape (offset-based "Load more"), scoped to the caller's own client via
@@ -59,10 +59,12 @@ export async function fetchMorePortalDocumentsAction(
       ...doc,
       versions: await Promise.all(
         (doc.versions || []).map(async (version) => {
-          const { data: signed } = await supabase.storage
-            .from(DOCUMENTS_BUCKET)
-            .createSignedUrl(version.file_path, 3600);
-          return { ...version, signedUrl: signed?.signedUrl ?? null };
+          const signedUrl = await createDocumentDownloadUrl(
+            supabase,
+            version.file_path,
+            version.file_name
+          );
+          return { ...version, signedUrl };
         })
       ),
     }))

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Building2, CheckSquare, Hourglass, Receipt } from 'lucide-react';
 import { getAuthContext } from '@/lib/auth';
+import { createDocumentDownloadUrl } from '@/lib/documents/signed-url';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { NotificationBell } from '@/components/notification-bell';
@@ -13,7 +14,6 @@ import { ContactCard } from './contact-card';
 import { PORTAL_TASKS_PAGE_SIZE, PORTAL_DOCUMENTS_PAGE_SIZE } from '@/lib/pagination';
 import type { ClientDocumentWithDetails, FirmTask } from '@/lib/types';
 
-const DOCUMENTS_BUCKET = 'client-documents';
 
 /**
  * Client portal — tasks + documents.
@@ -68,10 +68,12 @@ export default async function PortalPage() {
       ...doc,
       versions: await Promise.all(
         (doc.versions || []).map(async (version) => {
-          const { data: signed } = await supabase.storage
-            .from(DOCUMENTS_BUCKET)
-            .createSignedUrl(version.file_path, 3600);
-          return { ...version, signedUrl: signed?.signedUrl ?? null };
+          const signedUrl = await createDocumentDownloadUrl(
+            supabase,
+            version.file_path,
+            version.file_name
+          );
+          return { ...version, signedUrl };
         })
       ),
     }))

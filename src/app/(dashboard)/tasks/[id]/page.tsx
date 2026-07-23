@@ -1,6 +1,7 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
 import { getAuthContext } from '@/lib/auth';
+import { createDocumentDownloadUrl } from '@/lib/documents/signed-url';
 import { TaskHeader } from '@/components/task/task-header';
 import { TaskStagePanel } from '@/components/task/task-stage-panel';
 import { TaskAssignment } from '@/components/task/task-assignment';
@@ -18,7 +19,6 @@ import type {
   TaskStageHistoryWithActor,
 } from '@/lib/types';
 
-const DOCUMENTS_BUCKET = 'client-documents';
 
 interface TaskDetailPageProps {
   params: Promise<{ id: string }>;
@@ -130,10 +130,12 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
       ...doc,
       versions: await Promise.all(
         (doc.versions || []).map(async (version) => {
-          const { data: signed } = await supabase.storage
-            .from(DOCUMENTS_BUCKET)
-            .createSignedUrl(version.file_path, 3600);
-          return { ...version, signedUrl: signed?.signedUrl ?? null };
+          const signedUrl = await createDocumentDownloadUrl(
+            supabase,
+            version.file_path,
+            version.file_name
+          );
+          return { ...version, signedUrl };
         })
       ),
     }))

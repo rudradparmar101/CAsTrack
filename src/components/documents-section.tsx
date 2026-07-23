@@ -20,6 +20,8 @@ import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ACCEPTED_EXTENSIONS, ACCEPTED_LABEL } from '@/lib/documents/file-types';
+import { formatMaxDocumentSize } from '@/lib/documents/limits';
 import {
   uploadDocumentAction,
   uploadDocumentVersionAction,
@@ -387,7 +389,18 @@ function UploadForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <Input label="File" name="file" type="file" required hint="Up to 10MB." />
+      {/* `accept` is a convenience filter in the file picker only — never a
+          control. The server re-decides the type from the file's own bytes
+          (lib/documents/file-types.ts); this attribute is trivially bypassed
+          and is not relied on for anything. */}
+      <Input
+        label="File"
+        name="file"
+        type="file"
+        required
+        accept={ACCEPTED_EXTENSIONS.join(',')}
+        hint={`${ACCEPTED_LABEL}. Up to ${formatMaxDocumentSize()}.`}
+      />
       {!isVersion && (
         <>
           <Input

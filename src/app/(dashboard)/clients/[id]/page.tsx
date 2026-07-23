@@ -1,6 +1,7 @@
 import React from 'react';
 import { notFound } from 'next/navigation';
 import { getAuthContext } from '@/lib/auth';
+import { createDocumentDownloadUrl } from '@/lib/documents/signed-url';
 import { ClientDetailClient } from './client-detail-client';
 import { TASK_LIST_SELECT } from '../../tasks/filters';
 import type { ClientDocumentWithDetails, FirmTaskWithRefs, Profile } from '@/lib/types';
@@ -9,7 +10,6 @@ interface ClientDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
-const DOCUMENTS_BUCKET = 'client-documents';
 
 export default async function ClientDetailPage({ params }: ClientDetailPageProps) {
   const { id } = await params;
@@ -94,10 +94,12 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
       ...doc,
       versions: await Promise.all(
         (doc.versions || []).map(async (version) => {
-          const { data: signed } = await supabase.storage
-            .from(DOCUMENTS_BUCKET)
-            .createSignedUrl(version.file_path, 3600);
-          return { ...version, signedUrl: signed?.signedUrl ?? null };
+          const signedUrl = await createDocumentDownloadUrl(
+            supabase,
+            version.file_path,
+            version.file_name
+          );
+          return { ...version, signedUrl };
         })
       ),
     }))
