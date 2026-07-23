@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { getAuthProfile } from '@/lib/auth';
 import { sendEmail } from '@/lib/email/resend';
 import { invoiceIssuedEmail } from '@/lib/email/templates';
+import { checkRateLimit, rateLimitMessage } from '@/lib/rate-limit';
 import type { ActionResult, ActionResultWithData } from '@/lib/types';
 import { friendlyDbError } from '@/lib/db-errors';
 
@@ -131,7 +132,17 @@ export async function deleteDraftInvoiceAction(invoiceId: string): Promise<Actio
 export async function issueInvoiceAction(invoiceId: string): Promise<ActionResult> {
   const guard = await requireBillingManage();
   if (!guard.ok) return { success: false, error: guard.error };
-  const { supabase } = guard;
+  const { supabase, firmId } = guard;
+
+  // Sends a client-facing email and advances the firm's gapless invoice
+  // counter. Keyed by firm because both of those are firm-level resources.
+  // The limit is deliberately loose — the counter is the real constraint and a
+  // firm issuing 60 invoices in an hour is doing legitimate month-end work;
+  // this exists to bound a runaway loop, not to pace normal use.
+  const rateLimit = await checkRateLimit('invoice_issue', firmId);
+  if (!rateLimit.allowed) {
+    return { success: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) };
+  }
 
   const { error } = await supabase.rpc('issue_firm_invoice', { p_invoice_id: invoiceId });
   if (error) return { success: false, error: friendlyDbError(error, { context: 'billing' }) };

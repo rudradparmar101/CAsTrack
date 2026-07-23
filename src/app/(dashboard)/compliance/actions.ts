@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getAuthProfile } from '@/lib/auth';
 import { generateStatutoryTasksForFirm, type GenerationSummary } from '@/lib/compliance/generation';
+import { checkRateLimit, rateLimitMessage } from '@/lib/rate-limit';
 import type { ActionResultWithData } from '@/lib/types';
 
 /**
@@ -19,6 +20,16 @@ export async function generateStatutoryTasksAction(): Promise<ActionResultWithDa
 
   if (profile.role !== 'partner') {
     return { success: false, error: 'Only a partner can generate statutory tasks.' };
+  }
+
+  // Keyed by firm, not by user: the cost is the firm's, and two partners
+  // clicking "Generate now" in the same minute is the case worth damping.
+  // This walks every active client x every applicable compliance type across
+  // every department, and it is idempotent — so a repeat run inside the same
+  // window is pure waste, not a second useful result.
+  const rateLimit = await checkRateLimit('statutory_generation', profile.firm_id);
+  if (!rateLimit.allowed) {
+    return { success: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) };
   }
 
   const summary = await generateStatutoryTasksForFirm(supabase, profile.firm_id, userId);

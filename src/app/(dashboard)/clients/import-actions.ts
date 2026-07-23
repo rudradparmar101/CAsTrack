@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { parseCsv } from '@/lib/csv';
 import { requireClientsManage } from './actions';
 import { parseClientFields } from './client-validation';
+import { checkRateLimit, rateLimitMessage } from '@/lib/rate-limit';
 import type { ActionResultWithData } from '@/lib/types';
 import { friendlyDbError } from '@/lib/db-errors';
 
@@ -142,6 +143,17 @@ export async function commitClientImportAction(
   }
   if (rows.length > MAX_ROWS) {
     return { success: false, error: `Please import ${MAX_ROWS} rows or fewer at a time.` };
+  }
+
+  // The MAX_ROWS cap bounds ONE call; nothing bounded how often a caller could
+  // make it, and each call is up to 500 sequential single-row INSERTs — one
+  // network round trip apiece. Keyed by user: an import is one person's action,
+  // and a firm onboarding in parallel from two accounts is legitimate.
+  // Checked after the permission gate so an unauthorised caller cannot consume
+  // a real user's quota, and before the existing-PAN read that follows.
+  const rateLimit = await checkRateLimit('client_import', userId);
+  if (!rateLimit.allowed) {
+    return { success: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) };
   }
 
   const { data: existing } = await supabase
