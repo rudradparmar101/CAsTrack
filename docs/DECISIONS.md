@@ -931,6 +931,51 @@ with both follow-up data-integrity gaps found while fixing F4 (`assigned_to`/`re
 `client_outstanding` anon-grant fold-in, migration 008's stale header, and the systemic
 SECURITY DEFINER audit + this file's own standing-rule addition.
 
+### 2026-07-23 — STANDING RULE: every SECURITY DEFINER function must carry an explicit
+### firm-ownership check on every caller-supplied identifier, verified by probe
+**Decision:** from now on, any new `SECURITY DEFINER` function in this schema that accepts a
+caller-supplied identifier (an invoice id, a firm id, a DSC id, a target user id — anything the
+caller chooses, not derived from their own `auth.uid()`) MUST validate that identifier belongs
+to the caller's own firm (or is otherwise legitimately reachable by them) inside the function
+body, before the function does anything with it. This validation must be proven by a real
+signed-in probe — a cross-firm caller, a permission-less caller, and a `client_user` all
+attempting the call — not asserted by reading the function's SQL. A function that merely
+"looks safe" is not evidence; `apply_receipts_to_invoice()` and `get_firm_plan()` both read as
+unremarkable SQL and were both cross-tenant write/leak primitives until probed.
+**Rationale — three instances of the exact same class of bug motivated this rule:**
+- **F0 (migration 010):** `apply_receipts_to_invoice(p_invoice_id)` took an arbitrary invoice
+  UUID with zero ownership or permission check — any authenticated user, any firm, could force
+  a write against another firm's `firm_invoices` row.
+- **F1-RPC (migration 011):** `get_firm_plan(p_firm_id)` took an arbitrary firm UUID with zero
+  ownership or permission check — any authenticated user, including a `client_user`, could read
+  any other firm's real subscription plan/pricing/feature data.
+- **`record_dsc_movement()` (Phase 13.2, pre-dating this rule but the same shape):** correctly
+  had both a firm-ownership check on `p_dsc_id` and a same-firm check on `p_new_custodian_id`
+  from the start — proof this pattern was already understood in isolated cases, just never
+  written down as a standing requirement every future `SECURITY DEFINER` function must follow
+  by default, which is exactly why F0 and F1-RPC slipped through anyway.
+**Scope note, from the Phase 14.2 systemic audit (2026-07-23):** a full enumeration of every
+`SECURITY DEFINER` function in the live schema (via `pg_proc`, not a remembered list) found NO
+further violations beyond F0/F1-RPC — every other function taking a caller-supplied identifier
+(`can_access_document`, `client_can_access_task`, `create_notification`,
+`employee_has_task_for_client`, `get_client_assigned_contact`, `lookup_client_invitation`,
+`lookup_firm_by_invite_code`, `profile_in_my_firm`, `record_dsc_movement`,
+`staff_can_access_task`) was probed directly (cross-firm caller, `client_user`, and/or a
+permission-less employee, as applicable) and correctly rejects or resolves false/empty in every
+case. See the audit table in the migration-017 commit message and `project_context.md` §4.24 for the
+full function-by-function results. One consistency-only finding, not a live exploit: the trigger
+function `enforce_task_assignment_permission()` (migrations 014–016) was never declared
+`SECURITY DEFINER` — not exploitable today, because `profiles`/`departments` SELECT RLS already
+grants any staff member firm-wide read visibility (so the function's own `firm_id = NEW.firm_id`
+predicate is what enforces correctness, independent of RLS breadth) and it is not directly
+RPC-callable (trigger-return-type functions are excluded from PostgREST's schema cache,
+confirmed empirically) — but upgraded to `SECURITY DEFINER` anyway for consistency with every
+other trigger function in this schema and to remove the implicit dependency on another table's
+RLS staying exactly as broad as it is today.
+**Status:** active. Applies to every `SECURITY DEFINER` function written from this point
+forward; the systemic audit above is the one-time backward-looking sweep this rule's own
+adoption required.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)

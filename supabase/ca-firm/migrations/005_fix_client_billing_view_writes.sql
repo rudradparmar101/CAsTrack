@@ -1,12 +1,13 @@
 -- ============================================================================
 -- Migration 005 — Close client-writable DEFINER view gap on billing views
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- NOT YET APPLIED — present to Jay for approval first (same ⚠ HUMAN gate as
--- migrations 001/002/003/004), apply via the Supabase SQL editor, read-only
--- verify with scripts/verify/08-billing-rls.mjs (checks C12b/C12c must flip
--- to PASS with no regressions elsewhere), then this header gets updated.
--- Folded into schema.sql in the same change (schema.sql stays the
--- greenfield source of truth).
+-- ✅ APPLIED (Phase 12) — confirmed live: client_invoices/client_invoice_items
+-- carry exactly this migration's fix (security_barrier=true, REVOKE of write
+-- privileges from authenticated, verified directly against pg_views/
+-- information_schema during Phase 14.2's systemic audit, 2026-07-23). Folded
+-- into schema.sql in the same change. This header was stale ("NOT YET
+-- APPLIED") until that audit caught it — see docs/DECISIONS.md for the
+-- migration convention this class of gap motivated.
 --
 -- What this fixes (docs/verification/portal-isolation.md §7):
 --

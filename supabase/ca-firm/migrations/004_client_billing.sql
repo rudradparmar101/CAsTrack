@@ -1,10 +1,13 @@
 -- ============================================================================
 -- Migration 004 — Client billing & receivables (Phase 12)
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- NOT YET APPLIED — present to Jay for approval first (same ⚠ HUMAN gate as
--- migrations 001/002/003), apply via the Supabase SQL editor, read-only
--- verify, then this header gets updated. Folded into schema.sql in the same
--- change (schema.sql stays the greenfield source of truth).
+-- ✅ APPLIED (Phase 12) — confirmed live: firm_invoices/receipts/fee_masters
+-- and the rest of this migration's objects are in active use throughout this
+-- project's history (client billing has shipped and been exercised for many
+-- phases since). Folded into schema.sql in the same change. This header was
+-- stale ("NOT YET APPLIED") until Phase 14.2's systemic audit caught it
+-- (2026-07-23) — see docs/DECISIONS.md for the migration convention this
+-- class of gap motivated.
 --
 -- What this adds (docs/ROADMAP.md Phase 12 + docs/planning/phase-12-notes.md):
 --

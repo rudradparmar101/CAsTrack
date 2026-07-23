@@ -1,6 +1,10 @@
 -- ============================================================================
 -- Migration 001 — CA compliance core (Phase 9)
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
+-- ✅ APPLIED (Phase 9) — predates the ⚠/✅ header convention adopted from
+-- migration 004 onward; added retroactively during Phase 14.2's systemic
+-- header audit (2026-07-23) for consistency, not because this file's status
+-- was ever in doubt (Phase 9's objects have been in continuous live use).
 -- This is the DELTA to apply to the running database. `supabase/ca-firm/
 -- schema.sql` has already been updated in place to fold these changes into
 -- the greenfield source of truth for any FUTURE fresh project — do not run

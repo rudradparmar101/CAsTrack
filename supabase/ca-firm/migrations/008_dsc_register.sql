@@ -1,9 +1,13 @@
 -- ============================================================================
 -- Migration 008 — Phase 13.2: DSC (Digital Signature Certificate) register
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- ⚠ NOT YET APPLIED — drafted for Jay's review in Supabase Studio. Do not
--- apply via MCP or any automated path; this is a manual-apply-only gate,
--- same as every migration before it (001–007).
+-- ✅ APPLIED 2026-07-23 (Phase 13.2) — confirmed clean in Supabase Studio by
+-- Jay; verified via scripts/verify/10-dsc-register.mjs (17/17) and
+-- 11-dsc-playwright.mjs (17/17). Folded into schema.sql in the same session.
+-- This header was stale ("NOT YET APPLIED") until Phase 14.2's systemic
+-- audit caught it (2026-07-23) — see project_context.md §4.14 for the
+-- original application record and docs/DECISIONS.md for the migration
+-- convention this gap motivated.
 --
 -- docs/ROADMAP.md Phase 13.2: "DSC register: dsc_records (holder client/
 -- person, expiry, storage location) + custody movements (in/out, who, when);
