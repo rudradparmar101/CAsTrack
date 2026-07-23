@@ -79,7 +79,16 @@ const ID = {
   dscA: 'e0000000-0000-4000-8000-000000144001',
   feeMasterA: 'e0000000-0000-4000-8000-000000145001',
   invoiceA: 'e0000000-0000-4000-8000-000000146001',
+  invoiceB: 'f0000000-0000-4000-8000-000000146001',
+  invoiceFrozenProbe: 'e0000000-0000-4000-8000-000000146301',
+  invoiceItemsProbeA: 'e0000000-0000-4000-8000-000000146401',
+  invoiceItemA: 'e0000000-0000-4000-8000-000000146102',
+  invoiceItemB: 'f0000000-0000-4000-8000-000000146101',
   receiptA: 'e0000000-0000-4000-8000-000000147001',
+  docVersionA: 'e0000000-0000-4000-8000-000000142101',
+  docVersionB: 'f0000000-0000-4000-8000-000000142101',
+  subInvoiceA: 'e0000000-0000-4000-8000-000000146201',
+  subInvoiceB: 'f0000000-0000-4000-8000-000000146201',
   templateA: 'e0000000-0000-4000-8000-000000148001',
   invitationA: 'e0000000-0000-4000-8000-000000149001',
   commentInternalA: 'e0000000-0000-4000-8000-00000014a001',
@@ -288,6 +297,22 @@ async function seed(admin) {
     name: 'Firm B doc', approval_status: 'approved', visible_to_client: true, uploaded_by: pbId,
   });
 
+  // Phase 14.1b: document_versions had ZERO seed coverage — every version row
+  // in this schema is normally created by an upload flow, never directly, so
+  // the sweep never had one to probe against. One per firm, matching each
+  // firm's own doc, so can_access_document()'s cross-firm scoping (which
+  // document_versions' own policies re-apply verbatim) has a real pair to test.
+  await up(admin, 'document_versions', {
+    id: ID.docVersionA, firm_id: ID.firmA, document_id: ID.docTaskLinked, version_number: 1,
+    file_name: 'v1.txt', file_path: `${ID.firmA}/${ID.clientA1}/${ID.docTaskLinked}/22222222-2222-4222-8222-222222222222.txt`,
+    file_size: 100, uploaded_by: paId,
+  });
+  await up(admin, 'document_versions', {
+    id: ID.docVersionB, firm_id: ID.firmB, document_id: ID.docB, version_number: 1,
+    file_name: 'v1.txt', file_path: `${ID.firmB}/${ID.clientB1}/${ID.docB}/v1.txt`,
+    file_size: 100, uploaded_by: pbId,
+  });
+
   await putObjectIfAbsent(admin, `${ID.firmA}/${ID.clientA1}/${ID.docInternalPending}/11111111-1111-4111-8111-111111111111.txt`, 'internal pending contents');
   await putObjectIfAbsent(admin, `${ID.firmA}/${ID.clientA1}/${ID.docTaskLinked}/22222222-2222-4222-8222-222222222222.txt`, 'linked approved contents');
   await putObjectIfAbsent(admin, `${ID.firmA}/${ID.clientA1}/${ID.docInternalOtherDept}/33333333-3333-4333-8333-333333333333.txt`, 'internal other-department contents');
@@ -335,9 +360,69 @@ async function seed(admin) {
     amount: 5000, periodicity: 'monthly',
   });
 
+  // NOTE (2026-07-23, Phase 14.1b): invoiceA was originally seeded as
+  // 'draft'. An earlier, since-corrected version of the A4 guard_firm_invoice
+  // probe (below) transitioned it through 'issued' via a raw UPDATE before a
+  // dedicated invoiceFrozenProbe row was introduced for that purpose — and
+  // discovered, empirically, that there is no way back: guard_firm_invoice's
+  // frozen-column list (invoice_seq/invoice_number/invoice_date/total_amount/
+  // issued_at) makes an issued invoice's numbering permanent by design, and
+  // the table's own CHECK constraint requires invoice_seq IS NULL exactly
+  // when status='draft' — so reverting status to 'draft' while those columns
+  // stay non-null is rejected by the CHECK, and nulling them out is rejected
+  // by the trigger. This is the immutability guarantee working as intended,
+  // just triggered by a test artifact rather than a real issued invoice. The
+  // seed below now matches invoiceA's actual, permanent, live state exactly
+  // (fixed literals, not re-derived) so every future run's upsert is a true
+  // no-op — no test in this suite required invoiceA to be 'draft' specifically.
   await up(admin, 'firm_invoices', {
-    id: ID.invoiceA, firm_id: ID.firmA, client_id: ID.clientA1, status: 'draft',
+    id: ID.invoiceA, firm_id: ID.firmA, client_id: ID.clientA1, status: 'issued',
+    financial_year: '2026-27', created_by: paId, invoice_seq: 1,
+    invoice_number: `${TAG}-001`, invoice_date: '2026-07-23', total_amount: 5000,
+    issued_at: '2026-07-23T13:53:54.870Z',
+  });
+
+  // Phase 14.1b: a Firm B invoice, so firm_invoice_items/firm_invoice_counters/
+  // document_versions all have a genuine cross-firm pair to probe, not just a
+  // Firm A row nobody else can reach by construction.
+  await up(admin, 'firm_invoices', {
+    id: ID.invoiceB, firm_id: ID.firmB, client_id: ID.clientB1, status: 'draft',
+    financial_year: '2026-27', created_by: pbId,
+  });
+  // invoiceA is permanently 'issued' (see the note above its own seed) —
+  // guard_invoice_items_frozen fires on INSERT too, not just UPDATE, so a
+  // line item can never be newly added against it. A dedicated, still-draft
+  // invoice is needed for the firm_invoice_items probe instead.
+  await up(admin, 'firm_invoices', {
+    id: ID.invoiceItemsProbeA, firm_id: ID.firmA, client_id: ID.clientA1, status: 'draft',
     financial_year: '2026-27', created_by: paId,
+  });
+  await up(admin, 'firm_invoice_items', {
+    id: ID.invoiceItemA, firm_id: ID.firmA, invoice_id: ID.invoiceItemsProbeA,
+    description: `${TAG} item A`, quantity: 1, rate: 5000, taxable_value: 5000,
+  });
+  await up(admin, 'firm_invoice_items', {
+    id: ID.invoiceItemB, firm_id: ID.firmB, invoice_id: ID.invoiceB,
+    description: `${TAG} item B`, quantity: 1, rate: 7000, taxable_value: 7000,
+  });
+  // firm_invoice_counters: PK is (firm_id, financial_year), no id column.
+  await up(admin, 'firm_invoice_counters', { firm_id: ID.firmA, financial_year: '2026-27', last_seq: 3 }, 'firm_id,financial_year');
+  await up(admin, 'firm_invoice_counters', { firm_id: ID.firmB, financial_year: '2026-27', last_seq: 1 }, 'firm_id,financial_year');
+
+  // A DEDICATED invoice for the A4 guard_firm_invoice probe, already seeded
+  // in 'issued' state at INSERT time (never transitioned there via UPDATE,
+  // which is exactly what guard_firm_invoice's frozen-column list would
+  // block). Every field here is a FIXED literal, never a fresh timestamp —
+  // guard_firm_invoice's frozen check uses IS DISTINCT FROM, so re-seeding
+  // the SAME values on every run is a true no-op and never trips it. Kept
+  // entirely separate from invoiceA/invoiceB so this probe's own status/
+  // amount_received mutation (the finding itself) never contaminates any
+  // other check that reads invoiceA.
+  await up(admin, 'firm_invoices', {
+    id: ID.invoiceFrozenProbe, firm_id: ID.firmA, client_id: ID.clientA1, status: 'issued',
+    financial_year: '2026-27', created_by: paId, invoice_seq: 99,
+    invoice_number: `${TAG}-frozen-probe`, invoice_date: '2026-01-01', total_amount: 5000,
+    issued_at: '2026-01-01T00:00:00Z',
   });
 
   // On-account receipt (invoice_id NULL — migration 006's addition, confirmed
@@ -355,16 +440,41 @@ async function seed(admin) {
   // all-NULL composite (which a zero-row match would otherwise produce and
   // make the "leak" look hollow).
   const { data: anyPlan } = await admin.from('plans').select('id').limit(1).single();
+  const subIdByFirm = {};
   if (anyPlan) {
     for (const firmId of [ID.firmA, ID.firmB]) {
       const { data: existingSub } = await admin.from('firm_subscriptions').select('id').eq('firm_id', firmId).maybeSingle();
-      if (!existingSub) {
-        await admin.from('firm_subscriptions').insert({
+      if (existingSub) {
+        subIdByFirm[firmId] = existingSub.id;
+      } else {
+        const { data: newSub } = await admin.from('firm_subscriptions').insert({
           firm_id: firmId, plan_id: anyPlan.id, status: 'active',
           current_period_end: new Date(Date.now() + 30 * 86400000).toISOString(),
-        });
+        }).select('id').single();
+        subIdByFirm[firmId] = newSub?.id;
       }
     }
+  }
+
+  // Phase 14.1b: subscription_invoices had ZERO seed coverage. One per firm —
+  // this table is platform-billing (the firm's OWN subscription to the SaaS),
+  // not tenant business data, so super_admin has a genuine ALL policy here
+  // (unlike firm_invoices/firm_invoice_items, which are client billing and
+  // super_admin has read-only access to); a real cross-firm + super-admin
+  // pair is needed to probe that distinction, not just Firm A alone.
+  if (subIdByFirm[ID.firmA] && subIdByFirm[ID.firmB]) {
+    await up(admin, 'subscription_invoices', {
+      id: ID.subInvoiceA, firm_id: ID.firmA, subscription_id: subIdByFirm[ID.firmA],
+      amount_inr: 999, status: 'due',
+      period_start: new Date(Date.now() - 5 * 86400000).toISOString(),
+      period_end: new Date(Date.now() + 25 * 86400000).toISOString(),
+    });
+    await up(admin, 'subscription_invoices', {
+      id: ID.subInvoiceB, firm_id: ID.firmB, subscription_id: subIdByFirm[ID.firmB],
+      amount_inr: 999, status: 'due',
+      period_start: new Date(Date.now() - 5 * 86400000).toISOString(),
+      period_end: new Date(Date.now() + 25 * 86400000).toISOString(),
+    });
   }
 
   await up(admin, 'notifications', {
@@ -1221,6 +1331,250 @@ async function main() {
   {
     const { data, error } = await pb.from('receipt_history').select('*').eq('receipt_id', ID.receiptA);
     R('receipt_history: PB (Firm B) gets ZERO rows for Firm A\'s receipt history (cross-firm)', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+
+  // ==========================================================================
+  // 19b. PHASE 14.1b — the four tables with ZERO prior sweep coverage:
+  // document_versions, firm_invoice_items, firm_invoice_counters,
+  // subscription_invoices. Full role matrix (partner, employee-defaults,
+  // employee-zero-permissions, employee-all-permissions, client_user,
+  // cross-firm) × SELECT/INSERT/UPDATE/DELETE where each table's own policy
+  // shape makes the case meaningful — none of these tables have a policy
+  // shape genuinely different from firm_invoices/receipts (already
+  // exhaustively covered in 08-billing-rls.mjs for the SAME-firm cases), so
+  // the marginal value here is cross-firm isolation + the one shape that IS
+  // different (subscription_invoices' super_admin ALL policy).
+  // ==========================================================================
+
+  // --- document_versions ---
+  {
+    const { data, error } = await ev.from('document_versions').select('*').eq('id', ID.docVersionA);
+    R('document_versions: EV (gstA member, docTaskLinked is on a gstA task) SEES her own firm\'s version row', !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const { data, error } = await e0.from('document_versions').select('*').eq('id', ID.docVersionA);
+    R('document_versions: E0 (no department access to docInternalOtherDept-style gap doesn\'t apply here — docTaskLinked IS her dept) still sees it via can_access_document()', !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+  }
+  await crossFirmZero(pb, 'document_versions', 'id', ID.docVersionA, 'document_versions: PB gets ZERO rows for Firm A\'s version (cross-firm)');
+  await crossFirmZero(evb, 'document_versions', 'id', ID.docVersionA, 'document_versions: EVB gets ZERO rows for Firm A\'s version (cross-firm)');
+  {
+    const { data, error } = await ua1.from('document_versions').select('*').eq('id', ID.docVersionA);
+    R('document_versions: UA1 (client_user, not the doc\'s owner-context — docTaskLinked belongs to clientA1 and IS visible/approved) sees it via can_access_document()\'s client branch', !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const { data, error } = await ua2.from('document_versions').select('*').eq('id', ID.docVersionA);
+    R('document_versions: UA2 (sibling client) gets ZERO rows for A1\'s version', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const { data, error } = await ev.from('document_versions').delete().eq('id', ID.docVersionA).select();
+    R('document_versions: EV (employee, not partner) DELETE denied (partner-only)', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const { data, error } = await pb.from('document_versions').insert({
+      firm_id: ID.firmB, document_id: ID.docTaskLinked, version_number: 2, file_name: 'x.txt', file_path: 'x', file_size: 1, uploaded_by: ids.pbId,
+    }).select().single();
+    R('document_versions: PB (Firm B partner) is DENIED inserting a version against Firm A\'s document (firm_id mismatch + can_access_document() both fail)',
+      !!error && !data, error?.message || 'INSERT SUCCEEDED (cross-firm version-insert bug)');
+  }
+
+  // --- firm_invoice_items ---
+  {
+    const { data, error } = await ep.from('firm_invoice_items').select('*').eq('id', ID.invoiceItemA);
+    R('firm_invoice_items: EP (billing.view granted) sees Firm A\'s invoice line item', !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const { data, error } = await e0.from('firm_invoice_items').select('*').eq('id', ID.invoiceItemA);
+    R('firm_invoice_items: E0 (billing.view revoked) gets ZERO rows for Firm A\'s invoice line item', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+  await crossFirmZero(pa, 'firm_invoice_items', 'id', ID.invoiceItemB, 'firm_invoice_items: PA gets ZERO rows for Firm B\'s invoice line item (cross-firm)');
+  {
+    const { data, error } = await ua1.from('firm_invoice_items').select('*').eq('id', ID.invoiceItemA);
+    R('firm_invoice_items: UA1 (client_user, no policy path at all) gets ZERO rows', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const { data, error } = await pa.from('firm_invoice_items').update({ description: 'PA cross-firm item edit attempt' }).eq('id', ID.invoiceItemB).select();
+    const { data: stillB } = await admin.from('firm_invoice_items').select('description').eq('id', ID.invoiceItemB).single();
+    R('firm_invoice_items: PA (Firm A) is DENIED updating Firm B\'s invoice line item (cross-firm) — zero rows affected, description unchanged',
+      !error && (data || []).length === 0 && stillB?.description === `${TAG} item B`,
+      error?.message || `rows returned: ${data?.length}, description now: ${stillB?.description}`);
+  }
+
+  // --- firm_invoice_counters — probed hard: sequential-numbering integrity.
+  // If a cross-firm user could read or advance another firm's counter, that
+  // is BOTH a leak (reveals invoice volume) and an integrity risk (numbering
+  // collisions/gaps). ---
+  {
+    const { data, error } = await ep.from('firm_invoice_counters').select('*').eq('firm_id', ID.firmA).eq('financial_year', '2026-27');
+    R('firm_invoice_counters: EP (billing.view) sees Firm A\'s own counter row', !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const { data, error } = await e0.from('firm_invoice_counters').select('*').eq('firm_id', ID.firmA).eq('financial_year', '2026-27');
+    R('firm_invoice_counters: E0 (billing.view revoked) gets ZERO rows for Firm A\'s own counter', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    // Cross-firm READ: PB (Firm B partner, real billing.manage via partner
+    // bypass) probing Firm A's counter row directly by composite key.
+    const { data, error } = await pb.from('firm_invoice_counters').select('*').eq('firm_id', ID.firmA).eq('financial_year', '2026-27');
+    R('firm_invoice_counters: PB (Firm B partner) gets ZERO rows for Firm A\'s counter (cross-firm READ — would leak invoice volume)', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    // Cross-firm WRITE, probed hard: PB attempts to directly ADVANCE Firm
+    // A's counter (the exact integrity risk Jay flagged — a successful
+    // cross-firm write here could desynchronize Firm A's next invoice
+    // number from what issue_firm_invoice() expects, causing a collision or
+    // a gap the very next time Firm A issues an invoice).
+    const { data: before } = await admin.from('firm_invoice_counters').select('last_seq').eq('firm_id', ID.firmA).eq('financial_year', '2026-27').single();
+    const { data, error } = await pb.from('firm_invoice_counters').update({ last_seq: 999 }).eq('firm_id', ID.firmA).eq('financial_year', '2026-27').select();
+    const { data: after } = await admin.from('firm_invoice_counters').select('last_seq').eq('firm_id', ID.firmA).eq('financial_year', '2026-27').single();
+    R('firm_invoice_counters: PB (Firm B) is DENIED advancing Firm A\'s counter (cross-firm WRITE — sequential-numbering integrity) — value unchanged',
+      before?.last_seq === after?.last_seq && (!data || data.length === 0),
+      `before: ${before?.last_seq}, after: ${after?.last_seq}, rows returned: ${data?.length}, error: ${error?.message || 'none (RLS silently filtered, 0 rows affected)'}`);
+  }
+  {
+    // Cross-firm INSERT: PB attempts to create a counter row for Firm A in a
+    // financial year Firm A hasn't seeded yet (probes the INSERT policy's
+    // firm_id check independent of the UPDATE path above).
+    const { error } = await pb.from('firm_invoice_counters').insert({ firm_id: ID.firmA, financial_year: '2099-00', last_seq: 1 });
+    R('firm_invoice_counters: PB (Firm B) is DENIED inserting a NEW counter row for Firm A (cross-firm INSERT)',
+      !!error, error ? `denied: ${error.message}` : 'INSERT SUCCEEDED — cross-firm counter forgery');
+  }
+
+  // --- subscription_invoices — the one table with a genuine super_admin ALL
+  // (read+write) policy, since it's platform billing (a firm's OWN
+  // subscription to the SaaS), not tenant business data. ---
+  {
+    const { data, error } = await pa.from('subscription_invoices').select('*').eq('id', ID.subInvoiceA);
+    R('subscription_invoices: PA (billing.view via partner) sees Firm A\'s own subscription invoice', !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+  }
+  await crossFirmZero(pa, 'subscription_invoices', 'id', ID.subInvoiceB, 'subscription_invoices: PA gets ZERO rows for Firm B\'s subscription invoice (cross-firm)');
+  {
+    const { data, error } = await pa.from('subscription_invoices').update({ status: 'paid' }).eq('id', ID.subInvoiceA).select();
+    R('subscription_invoices: PA (partner, NOT super_admin) is DENIED writing to her OWN firm\'s subscription invoice — platform-managed, not tenant-writable',
+      !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+
+  // ==========================================================================
+  // 19c. PHASE 14.1b — A2: super-admin POSITIVE paths. Every prior probe in
+  // this suite proved super_admin correctly EXCLUDED from nothing it
+  // shouldn't touch; none proved super_admin can actually DO what
+  // platform_admins exists to grant. Per ROLES_AND_RLS.md's own stated
+  // design ("Read access everywhere, write access to platform tables —
+  // plans, subscriptions, permission catalog"), prove BOTH directions with
+  // PSA (seeded platform super admin, no profiles row).
+  // ==========================================================================
+
+  {
+    // Positive: read across BOTH firms' tenant data — this is the "read
+    // access everywhere" half of the design.
+    const { data: aRows, error: aErr } = await psa.from('clients').select('id').eq('firm_id', ID.firmA);
+    const { data: bRows, error: bErr } = await psa.from('clients').select('id').eq('firm_id', ID.firmB);
+    R('Super-admin positive path: PSA reads Firm A\'s clients (cross-firm read, by design)', !aErr && (aRows || []).length > 0, aErr?.message || `rows: ${aRows?.length}`);
+    R('Super-admin positive path: PSA ALSO reads Firm B\'s clients (confirms "everywhere", not just Firm A)', !bErr && (bRows || []).length > 0, bErr?.message || `rows: ${bRows?.length}`);
+  }
+  {
+    const { data, error } = await psa.from('firm_invoices').select('id').eq('firm_id', ID.firmA);
+    R('Super-admin positive path: PSA reads Firm A\'s firm_invoices (tenant billing data, read-only per design)', !error && (data || []).length > 0, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    // Positive: legitimate platform WRITES — plans, platform_admins, firms.
+    const { data: plan, error: planErr } = await psa.from('plans').insert({
+      code: `${TAG}-plan`, name: 'RLS sweep throwaway plan', price_monthly_inr: 1, price_yearly_inr: 1,
+      max_users: 1, max_clients: 1, storage_gb: 1,
+    }).select().single();
+    R('Super-admin positive path: PSA CAN create a plan (platform table, intended write access)', !planErr && !!plan, planErr?.message);
+    if (plan) await admin.from('plans').delete().eq('id', plan.id);
+  }
+  {
+    const { data, error } = await psa.from('firms').update({ name: `${TAG} Firm A (super-admin rename probe)` }).eq('id', ID.firmA).select();
+    R('Super-admin positive path: PSA CAN update a firm\'s own row (platform-level housekeeping, intended write access)', !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+    await admin.from('firms').update({ name: `${TAG} Firm A` }).eq('id', ID.firmA); // restore
+  }
+  {
+    // Negative: the "CANNOT write tenant data where they shouldn't" half.
+    // No INSERT/UPDATE/DELETE policy anywhere grants super_admin write
+    // access to clients/tasks/documents/firm_invoices/receipts — confirmed
+    // by policy enumeration; proven here directly.
+    const { data, error } = await psa.from('clients').update({ name: 'PSA tenant-write probe' }).eq('id', ID.clientA1).select();
+    R('Super-admin NEGATIVE path: PSA is DENIED writing to clients (tenant business data — super_admin has read-only access here, by design)',
+      !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const { data, error } = await psa.from('tasks').update({ title: 'PSA tenant-write probe' }).eq('id', ID.taskGst).select();
+    R('Super-admin NEGATIVE path: PSA is DENIED writing to tasks', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const { data, error } = await psa.from('firm_invoices').update({ status: 'issued' }).eq('id', ID.invoiceA).select();
+    R('Super-admin NEGATIVE path: PSA is DENIED writing to firm_invoices (tenant billing data, not platform billing)', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const { data, error } = await psa.from('receipts').insert({ firm_id: ID.firmA, client_id: ID.clientA1, amount: 1, mode: 'cash', created_by: null }).select();
+    R('Super-admin NEGATIVE path: PSA is DENIED inserting a receipt (tenant billing data)', !!error && !data, error?.message || 'INSERT SUCCEEDED (bug)');
+  }
+
+  // ==========================================================================
+  // 19d. PHASE 14.1b — A3: doc<->task client-consistency. project_context.md
+  // §6 item 6: no DB constraint ensures documents.client_id matches
+  // tasks.client_id when a document is linked via task_id — the app layer
+  // (attachDocumentToTaskAction) checks this, RLS/schema does not. Prove
+  // what a raw PostgREST UPDATE by a permitted user (documents.approve, the
+  // permission that governs the task_id column per the "Document approvers
+  // can update documents" policy) can actually do, bypassing the app check.
+  // ==========================================================================
+
+  {
+    const { data: before } = await admin.from('documents').select('client_id, task_id').eq('id', ID.docTaskless).single();
+    const { data, error } = await ep.from('documents').update({ task_id: ID.taskGst }).eq('id', ID.docTaskless).select('client_id, task_id').single();
+    const linked = !error && data && data.task_id === ID.taskGst;
+    const mismatched = linked && data.client_id !== ID.clientA1; // taskGst belongs to clientA1; docTaskless belongs to clientA3
+    R('FINDING-CHECK doc<->task consistency: EP (documents.approve) can link docTaskless (client A3) to taskGst (client A1) via raw UPDATE — client_id/task_id now MISMATCHED, no DB constraint stops it',
+      linked && mismatched, error?.message || `client_id: ${data?.client_id} (expected clientA3 ${ID.clientA3}), task_id: ${data?.task_id}, task's own client is clientA1 ${ID.clientA1}`);
+    // restore
+    await admin.from('documents').update({ task_id: before?.task_id ?? null }).eq('id', ID.docTaskless);
+  }
+
+  // ==========================================================================
+  // 19e. PHASE 14.1b — A4: guard_firm_invoice frozen-column gap. status /
+  // amount_received / tds_received are NOT in the frozen-column list — only
+  // checked when OLD.status <> 'draft' anyway, and even then, these three
+  // are the ones intentionally excluded (trigger-derived from receipts).
+  // Probe: can a billing.manage user directly overwrite an ISSUED invoice's
+  // status/amount_received to fake a payment, bypassing receipts entirely?
+  // ==========================================================================
+
+  {
+    // invoiceFrozenProbe was seeded ALREADY 'issued' (via INSERT, not an
+    // UPDATE transition) specifically so this test never has to fight
+    // guard_firm_invoice's own frozen-column list to set up its precondition.
+    const { data, error } = await ep.from('firm_invoices').update({ status: 'paid', amount_received: 5000, tds_received: 0 }).eq('id', ID.invoiceFrozenProbe).select();
+    const faked = !error && (data || []).length === 1 && data[0].status === 'paid' && Number(data[0].amount_received) === 5000;
+    R('FINDING-CHECK guard_firm_invoice: EP (billing.manage) can directly UPDATE an issued invoice\'s status to \'paid\' and set amount_received, with ZERO receipt ever created — bypasses apply_receipts_to_invoice() entirely',
+      faked, error?.message || `status: ${data?.[0]?.status}, amount_received: ${data?.[0]?.amount_received}`);
+    // sanity: confirm no receipt was created for this "payment"
+    const { data: receipts } = await admin.from('receipts').select('id').eq('invoice_id', ID.invoiceFrozenProbe);
+    R('guard_firm_invoice finding, sanity check: zero receipts exist for invoiceFrozenProbe despite it now showing status=paid/amount_received=5000', (receipts || []).length === 0, `receipts found: ${receipts?.length}`);
+    // No restore: status/amount_received/tds_received are NOT in the frozen
+    // list (that is the finding), so re-running this exact update on the
+    // next sweep run is an idempotent no-op — nothing to clean up, and
+    // nothing else in this suite reads invoiceFrozenProbe.
+  }
+
+  // ==========================================================================
+  // 19f. PHASE 14.1b — A5: lookup_client_invitation() was incidentally
+  // probed during Phase 14.2's unauthenticated-path regression work (a real
+  // anon client, real token, real bogus token) — re-confirmed here as a
+  // permanent, committed check rather than leaving it as a one-off ad hoc
+  // script, closing the last named gap in the original 14.1b list.
+  // ==========================================================================
+
+  {
+    const anonForInvite = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+    const { data, error } = await anonForInvite.rpc('lookup_client_invitation', { p_token: `${TAG}-token-${ID.invitationA}` });
+    R('lookup_client_invitation(): anon (no session) resolves a REAL token to its one matching row, no leak', !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const anonForInvite = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+    const { data, error } = await anonForInvite.rpc('lookup_client_invitation', { p_token: 'totally-bogus-token' });
+    R('lookup_client_invitation(): anon (no session) gets ZERO rows for a bogus token, not an error or partial leak', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
   }
 
   // ==========================================================================
