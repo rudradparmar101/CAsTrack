@@ -47,7 +47,9 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileSync } from 'node:fs';
+import { createClient } from '@supabase/supabase-js';
 import { adminClient, signInAs } from './lib/admin.mjs';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './lib/env.mjs';
 import { log } from './lib/playwright-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1392,6 +1394,67 @@ async function main() {
     // suppliable.
     const { data, error } = await pa.rpc('profile_in_my_firm', { p_user_id: ids.pbId, p_role: 'partner' });
     R('profile_in_my_firm(): PA probing Firm B\'s partner id resolves false (own-firm-only)', !error && data === false, error?.message || `got: ${data}`);
+  }
+
+  // ==========================================================================
+  // 21. MIGRATION 017 — default-privileges hardening (Phase 14.2 systemic
+  // audit). anon now has ZERO table-level grants in public (previously full
+  // DELETE/INSERT/REFERENCES/SELECT/TRIGGER/TRUNCATE/UPDATE on every table,
+  // inherited from Supabase's own project-level default ACL, not anything
+  // this project's migrations added). Confirms genuinely — a pure anon
+  // client with NO signed-in session, not one of the seeded test users.
+  // ==========================================================================
+
+  const pureAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+
+  {
+    // Before migration 017: anon had the base table grant, so RLS alone
+    // denied it silently (0 rows, no error). After: anon has NO grant at
+    // all, so PostgREST rejects the query before RLS even runs — a
+    // "permission denied" error, not an empty result. This is the STRONGER
+    // of the two denials, and the expected outcome now.
+    const { data, error } = await pureAnon.from('clients').select('*').limit(5);
+    R('Migration 017 fix: anon (no session) is DENIED reading clients at the GRANT layer (permission denied, not just an empty RLS-filtered result)',
+      !!error && !data, error?.message || `rows: ${data?.length} (expected a grant-denied error, got data instead)`);
+  }
+  {
+    const { data, error } = await pureAnon.from('firm_invoices').select('*').limit(5);
+    R('Migration 017 fix: anon (no session) is DENIED reading firm_invoices at the GRANT layer',
+      !!error && !data, error?.message || `rows: ${data?.length} (expected a grant-denied error, got data instead)`);
+  }
+  {
+    const { data, error } = await pureAnon.from('client_outstanding').select('*').limit(5);
+    R('Migration 017 fix: anon (no session) is DENIED reading client_outstanding at the GRANT layer (the originally-flagged view — no anon grant left at all)',
+      !!error && !data, error?.message || `rows: ${data?.length} (expected a grant-denied error, got data instead)`);
+  }
+  {
+    const { data, error } = await pureAnon.from('clients').insert({ firm_id: ID.firmA, name: 'anon write probe', business_type: 'individual' }).select();
+    R('Migration 017 fix: anon (no session) is DENIED writing to clients (INSERT) — no grant, not just RLS',
+      !!error && !data, error ? `denied: ${error.message}` : 'INSERT SUCCEEDED — anon grant regression');
+  }
+  {
+    // The two pre-auth RPCs anon legitimately needs (invite-code lookup,
+    // client-invitation lookup) must still work — they're SECURITY DEFINER,
+    // so they run as the function owner regardless of anon's own table
+    // grants, but this is the empirical proof, not an assumption.
+    const { data: firm } = await admin.from('firms').select('invite_code').eq('id', ID.firmA).single();
+    const { data, error } = await pureAnon.rpc('lookup_firm_by_invite_code', { p_code: firm.invite_code });
+    R('Migration 017 fix: anon (no session) can STILL call lookup_firm_by_invite_code() with a real code (SECURITY DEFINER unaffected by table grant revokes)',
+      !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    const { data, error } = await pureAnon.rpc('lookup_client_invitation', { p_token: `${TAG}-token-${ID.invitationA}` });
+    R('Migration 017 fix: anon (no session) can STILL call lookup_client_invitation() with a real token (SECURITY DEFINER unaffected by table grant revokes)',
+      !error && (data || []).length === 1, error?.message || `rows: ${data?.length}`);
+  }
+  {
+    // Real sign-in (the actual login path) must be entirely unaffected --
+    // it's a pure Supabase Auth (auth.users) operation, a separate schema
+    // from the public-schema grants this migration touched.
+    const signInClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+    const { data, error } = await signInClient.auth.signInWithPassword({ email: EMAIL.pa, password: PASSWORD });
+    R('Migration 017 fix: real anon-key sign-in (signInWithPassword) for an existing user still SUCCEEDS (auth schema untouched by public-schema grant revokes)',
+      !error && !!data?.user, error ? `${error.message} (status ${error.status}, code ${error.code})` : (data?.user ? 'ok' : 'no user returned'));
   }
 
   // ==========================================================================

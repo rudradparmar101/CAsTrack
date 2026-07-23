@@ -1273,8 +1273,19 @@ CREATE TRIGGER record_task_stage_history
 -- only gap — the employee INSERT branch was already implicitly firm-safe
 -- via department membership, but partners bypassed it entirely). The
 -- function keeps its original name despite its grown scope, to avoid churn.
+-- Migration 017 (Phase 14.2 systemic audit) adds SECURITY DEFINER — not a
+-- functional fix (profiles/departments SELECT RLS was already firm-wide for
+-- staff, so this function's own firm_id-equality predicates already
+-- enforced correctness regardless of invoker RLS breadth, and the function
+-- isn't directly RPC-callable at all), but a consistency fix matching every
+-- other trigger function in this schema, removing the implicit dependency
+-- on that RLS staying exactly this broad forever.
 CREATE OR REPLACE FUNCTION public.enforce_task_assignment_permission()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
   -- Permission gate (migration 014): reassigning an EXISTING task requires
   -- tasks.assign. UPDATE-only — initial assignment via INSERT stays governed
@@ -1327,7 +1338,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SET search_path = public;
+$$;
 
 CREATE TRIGGER enforce_task_assignment
   BEFORE INSERT OR UPDATE ON public.tasks
@@ -1874,6 +1885,56 @@ BEGIN
   WHERE id = p_dsc_id;
 END;
 $$;
+
+-- 9.8 Event trigger: auto-enable RLS (and, per migration 017, strip default
+-- over-grants) on every FUTURE table created in `public`, regardless of
+-- which role runs CREATE TABLE — this is the SAME mechanism that has kept
+-- every table in this schema RLS-enabled from the start; migration 017
+-- extended it to also close the anon/authenticated default-privileges gap
+-- for tables created after that point, so the gap this migration closed for
+-- EXISTING tables (§13 below) cannot silently recur for new ones. Views are
+-- deliberately NOT covered here — this project's convention for new views is
+-- an explicit REVOKE written directly in the migration that creates them
+-- (see client_invoices/client_invoice_items/client_outstanding above).
+CREATE OR REPLACE FUNCTION public.rls_auto_enable()
+RETURNS event_trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $$
+DECLARE
+  cmd record;
+BEGIN
+  FOR cmd IN
+    SELECT *
+    FROM pg_event_trigger_ddl_commands()
+    WHERE command_tag IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+      AND object_type IN ('table','partitioned table')
+  LOOP
+     IF cmd.schema_name IS NOT NULL AND cmd.schema_name IN ('public') AND cmd.schema_name NOT IN ('pg_catalog','information_schema') AND cmd.schema_name NOT LIKE 'pg_toast%' AND cmd.schema_name NOT LIKE 'pg_temp%' THEN
+      BEGIN
+        EXECUTE format('alter table if exists %s enable row level security', cmd.object_identity);
+        RAISE LOG 'rls_auto_enable: enabled RLS on %', cmd.object_identity;
+      EXCEPTION
+        WHEN OTHERS THEN
+          RAISE LOG 'rls_auto_enable: failed to enable RLS on %', cmd.object_identity;
+      END;
+      BEGIN
+        EXECUTE format('revoke all privileges on %s from anon', cmd.object_identity);
+        EXECUTE format('revoke truncate, trigger, references on %s from authenticated', cmd.object_identity);
+        RAISE LOG 'rls_auto_enable: revoked anon grants / trimmed authenticated grants on %', cmd.object_identity;
+      EXCEPTION
+        WHEN OTHERS THEN
+          RAISE LOG 'rls_auto_enable: failed to revoke default grants on %', cmd.object_identity;
+      END;
+     ELSE
+        RAISE LOG 'rls_auto_enable: skip % (either system schema or not in enforced list: %.)', cmd.object_identity, cmd.schema_name;
+     END IF;
+  END LOOP;
+END;
+$$;
+
+CREATE EVENT TRIGGER ensure_rls ON ddl_command_end EXECUTE FUNCTION public.rls_auto_enable();
 
 -- ============================================================================
 -- 10. SEED DATA
@@ -3062,6 +3123,24 @@ CREATE POLICY "Partners can delete their firm's document files"
     AND public.get_user_role() = 'partner'
     AND (storage.foldername(name))[1] = public.get_user_firm_id()::text
   );
+
+-- ============================================================================
+-- 13. DEFAULT-PRIVILEGES HARDENING (migration 017, Phase 14.2 systemic audit)
+-- Supabase's own project-level default ACL grants EVERY table/view in
+-- `public` full privileges (DELETE/INSERT/REFERENCES/SELECT/TRIGGER/
+-- TRUNCATE/UPDATE) to both `anon` and `authenticated` at CREATE TABLE time —
+-- confirmed via pg_default_acl, not something this project's own migrations
+-- ever added per-object. Not exploitable (zero RLS policies anywhere target
+-- `anon`/`PUBLIC`, confirmed empirically with a real anon-key client against
+-- every table tested), but `anon` never has a legitimate reason to hold ANY
+-- privilege here, and TRUNCATE specifically is not filtered by RLS at all —
+-- granting it to `authenticated`/`anon` is a latent (if not PostgREST-
+-- reachable) gap. This blanket revoke must run AFTER every table/view above
+-- is created — "ALL TABLES IN SCHEMA" only catches what already exists.
+-- ============================================================================
+
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM anon;
+REVOKE TRUNCATE, TRIGGER, REFERENCES ON ALL TABLES IN SCHEMA public FROM authenticated;
 
 -- ============================================================================
 -- END OF SCHEMA
