@@ -1,9 +1,9 @@
 -- ============================================================================
 -- Migration 009 — Close client_user readability gap on user_permissions
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- ⚠ NOT YET APPLIED — drafted for Jay's review in Supabase Studio. Do not
--- apply via MCP or any automated path; this is a manual-apply-only gate,
--- same as every migration before it (001–008).
+-- ✅ APPLIED — confirmed in Studio 2026-07-23; scripts/verify/12-permissions-ui.mjs
+-- reran 25/25 immediately after. Folded into schema.sql in the same change
+-- (schema.sql stays the greenfield source of truth).
 --
 -- Found by: scripts/verify/12-permissions-ui.mjs, check II1, during the
 -- Phase 13.3 Step 0 gate (Supabase MCP was unavailable in this environment,

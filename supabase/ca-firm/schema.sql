@@ -2039,9 +2039,13 @@ CREATE POLICY "Team managers can remove department members"
 -- Partners manage overrides for EMPLOYEES in their firm only (not for other
 -- partners, and never for client_users — their access is structural).
 -- ---------------------------------------------------------------------------
-CREATE POLICY "Users can view their own permission overrides"
+-- Scoped to employees only (migration 009): only an employee row can ever
+-- legitimately exist here (see the INSERT/UPDATE/DELETE policies below), so
+-- an unscoped USING (user_id = auth.uid()) would let a client_user or
+-- partner read a stray row via raw PostgREST if one ever existed.
+CREATE POLICY "Employees can view their own permission overrides"
   ON public.user_permissions FOR SELECT TO authenticated
-  USING (user_id = auth.uid());
+  USING (user_id = auth.uid() AND public.get_user_role() = 'employee');
 
 CREATE POLICY "Partners can view overrides in their firm"
   ON public.user_permissions FOR SELECT TO authenticated
