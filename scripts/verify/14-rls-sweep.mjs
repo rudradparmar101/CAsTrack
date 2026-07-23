@@ -754,39 +754,93 @@ async function main() {
   // ==========================================================================
 
   {
-    // FINDING-CHECK: "Staff can read their firm's document files" has NO
-    // task-access / clients.view / has_permission() condition at all — just
-    // is_firm_staff() + matching firm_id folder segment. docInternalOtherDept
-    // is on taskIncomeTax (a department E0 is NOT a member of, unassigned) —
-    // confirmed above that E0 gets ZERO rows on the documents TABLE for it
-    // (staff_can_access_task denies her). The STORAGE policy doesn't consult
-    // staff_can_access_task, the documents table, or has_permission() at all.
-    const objPath = `${ID.firmA}/${ID.clientA1}/${ID.docInternalOtherDept}/33333333-3333-4333-8333-333333333333.txt`;
-    const { data, error } = await e0.storage.from(BUCKET).download(objPath);
-    const detail = error ? `download DENIED: ${error.message} (would mean the gap is closed)` : 'download SUCCEEDED — bytes returned despite table-layer denial';
-    R('FINDING-CHECK storage: E0 (denied at the table layer for this doc) CAN still download the raw object bytes via the broad staff storage policy',
-      !error && !!data, detail);
-  }
-  {
-    // Table-layer sanity check backing the FINDING-CHECK above: confirm E0
-    // really is denied at the documents table for this specific doc (so the
-    // storage result above is a genuine gap, not a doc she'd see anyway).
+    // Table-layer sanity check: confirm E0 really is denied at the documents
+    // table for docInternalOtherDept (a document on taskIncomeTax, a
+    // department she is NOT a member of) — establishes that the storage
+    // checks below are testing a genuine access boundary, not a doc she'd
+    // see anyway.
     const { data, error } = await e0.from('documents').select('id').eq('id', ID.docInternalOtherDept);
     R('documents (sanity): E0 gets ZERO rows on the TABLE for docInternalOtherDept (staff_can_access_task denies — different department)',
       !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
   }
+
+  // F2 FIX PROBE (migration 012): the staff storage SELECT and INSERT
+  // policies now both require can_access_document(document_id) on top of the
+  // firm-folder match. Six cases prove the fix in both directions — read AND
+  // write — plus the two legitimate flows it must not break.
+  const otherDeptObjPath = `${ID.firmA}/${ID.clientA1}/${ID.docInternalOtherDept}/33333333-3333-4333-8333-333333333333.txt`;
+  const otherDeptFolder = `${ID.firmA}/${ID.clientA1}/${ID.docInternalOtherDept}`;
+  const linkedObjPath = `${ID.firmA}/${ID.clientA1}/${ID.docTaskLinked}/22222222-2222-4222-8222-222222222222.txt`;
+
   {
-    const objPath = `${ID.firmA}/${ID.clientA1}/${ID.docInternalOtherDept}`;
-    const { data, error } = await e0.storage.from(BUCKET).list(objPath);
-    R('storage: E0 can also LIST that document\'s folder (enumeration, not just download-if-known-path)',
-      !error && (data || []).length > 0, error?.message || `entries: ${data?.length}`);
+    // 1. Employee WITHOUT department access (E0, docInternalOtherDept is on
+    // taskIncomeTax — not her department): download and list must now BOTH
+    // be denied. This was the original F2 finding — E0 could do both before
+    // the fix.
+    const dl = await e0.storage.from(BUCKET).download(otherDeptObjPath);
+    R('F2 fix: E0 (no department access to docInternalOtherDept) is DENIED downloading its raw bytes',
+      !!dl.error && !dl.data, dl.error ? `denied: ${dl.error.message}` : 'download SUCCEEDED — gap still open');
+
+    const ls = await e0.storage.from(BUCKET).list(otherDeptFolder);
+    R('F2 fix: E0 (no department access) is DENIED listing docInternalOtherDept\'s folder (entries: 0, not an error — Storage list() returns empty rather than denying)',
+      !ls.error && (ls.data || []).length === 0, ls.error?.message || `entries: ${ls.data?.length}`);
   }
   {
+    // 2. Employee WITH access: EV is a member of gstA, docTaskLinked's task
+    // (taskGst) is in gstA — must still succeed (no regression).
+    const { data, error } = await ev.storage.from(BUCKET).download(linkedObjPath);
+    R('F2 fix: EV (gstA member, docTaskLinked is on a gstA task) SUCCEEDS downloading it (no regression)',
+      !error && !!data, error ? `unexpectedly denied: ${error.message}` : 'succeeded as expected');
+  }
+  {
+    // 3. Partner: bypass intact — PA can still reach docInternalOtherDept
+    // despite not being a member of any department (partners see everything
+    // via can_access_document's own "partner -> true" branch).
+    const { data, error } = await pa.storage.from(BUCKET).download(otherDeptObjPath);
+    R('F2 fix: PA (partner) SUCCEEDS downloading docInternalOtherDept (partner bypass intact)',
+      !error && !!data, error ? `unexpectedly denied: ${error.message}` : 'succeeded as expected');
+  }
+  {
+    // 4. client_user: unchanged — UA1 (the owning client, but the doc is
+    // internal/pending) is still correctly denied; this policy wasn't
+    // touched by migration 012, only the staff policies were.
     const objPath = `${ID.firmA}/${ID.clientA1}/${ID.docInternalPending}/11111111-1111-4111-8111-111111111111.txt`;
     const { data, error } = await ua1.storage.from(BUCKET).download(objPath);
-    const detail = error ? `correctly denied: ${error.message}` : 'download SUCCEEDED (regression of migration 003)';
-    R('storage: UA1 (the OWNING client, but doc is internal/pending) is correctly DENIED (client curation still holds)',
-      !!error && !data, detail);
+    R('F2 fix: UA1 (client_user, owning client but doc is internal/pending) is STILL correctly denied (client policy untouched, no regression)',
+      !!error && !data, error ? `correctly denied: ${error.message}` : 'download SUCCEEDED (regression of migration 003)');
+  }
+  {
+    // 5. Real staff upload + new-version upload, end to end: EP creates a
+    // brand-new document (own department task), uploads v1's bytes, then
+    // uploads v2's bytes into the same document's folder. Mirrors
+    // uploadDocumentAction()/uploadDocumentVersionAction()'s own ordering —
+    // documents row first, storage object second — the exact ordering this
+    // migration's fix depends on.
+    const newDocId = randomUUID();
+    const { error: docInsertError } = await ep.from('documents').insert({
+      id: newDocId, firm_id: ID.firmA, client_id: ID.clientA1, task_id: ID.taskGst,
+      name: `${TAG} F2 probe doc`, approval_status: 'pending', visible_to_client: false,
+      uploaded_by: (await ep.auth.getUser()).data.user.id,
+    });
+    const v1Path = `${ID.firmA}/${ID.clientA1}/${newDocId}/${randomUUID()}.txt`;
+    const v1 = await ep.storage.from(BUCKET).upload(v1Path, buf('F2 probe v1 contents'));
+    const v2Path = `${ID.firmA}/${ID.clientA1}/${newDocId}/${randomUUID()}.txt`;
+    const v2 = await ep.storage.from(BUCKET).upload(v2Path, buf('F2 probe v2 contents'));
+    R('F2 fix: EP\'s real upload (new document, v1) + a new-version upload (v2) into the same folder both SUCCEED end to end',
+      !docInsertError && !v1.error && !v2.error,
+      `docInsert: ${docInsertError?.message || 'ok'}, v1: ${v1.error?.message || 'ok'}, v2: ${v2.error?.message || 'ok'}`);
+  }
+  {
+    // 6. NEW — the INSERT fix itself, proven directly: E0 (no department
+    // access to docInternalOtherDept) attempts to write bytes into ITS
+    // folder using a fresh filename. Before migration 012 this would have
+    // succeeded (the INSERT policy never checked document_id at all); now
+    // it must be denied by the same can_access_document() check just added
+    // to the staff INSERT policy's WITH CHECK.
+    const plantPath = `${otherDeptFolder}/${randomUUID()}.txt`;
+    const { error } = await e0.storage.from(BUCKET).upload(plantPath, buf('planted by E0, should be denied'));
+    R('F2 fix: E0 (no department access) is DENIED writing a new object into docInternalOtherDept\'s folder (INSERT-side fix)',
+      !!error, error ? `denied: ${error.message}` : 'upload SUCCEEDED — write-side gap still open');
   }
   {
     const objPathB = `${ID.firmB}/${ID.clientB1}/${ID.docB}/`;

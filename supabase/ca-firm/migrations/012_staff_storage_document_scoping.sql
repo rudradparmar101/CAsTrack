@@ -2,12 +2,11 @@
 -- Migration 012 — Phase 14.2, finding F2 (HIGH): scope the staff storage
 -- SELECT policy to can_access_document(), same as the client-side policy
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- ⚠ NOT YET APPLIED — drafted for Jay's review in Supabase Studio. Do not
--- apply via MCP or any automated path; this is a manual-apply-only gate,
--- same as every migration before it (001–011). Per the migration convention
--- (project_context.md header block / docs/DECISIONS.md): once applied and
--- confirmed, THIS FILE'S OWN HEADER must be updated to APPLIED <date> in the
--- same session that folds it into schema.sql.
+-- ✅ APPLIED 2026-07-23 — confirmed clean in Supabase Studio by Jay; storage
+-- policy inspection confirms can_access_document() is live in both the staff
+-- SELECT qual and the staff INSERT with_check. Folded into schema.sql in the
+-- same session per the migration convention (project_context.md header block
+-- / docs/DECISIONS.md).
 --
 -- Found by: docs/verification/phase-14-rls-sweep.md, finding F2 —
 -- scripts/verify/14-rls-sweep.mjs, checks #71/#74/#75. `"Staff can read their

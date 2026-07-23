@@ -2892,12 +2892,23 @@ CREATE POLICY "Super admins can view all DSC custody movements"
 -- (portal-isolation finding #7; migration 003).
 -- ============================================================================
 
+-- Migration 012 (F2 fix): scoped to can_access_document() on the document_id
+-- path segment, same as the client policy below — staff no longer get a
+-- firm-wide storage floor wider than the department/task scoping the
+-- documents table itself already enforces.
 CREATE POLICY "Staff can read their firm's document files"
   ON storage.objects FOR SELECT TO authenticated
   USING (
     bucket_id = 'client-documents'
     AND public.is_firm_staff()
     AND (storage.foldername(name))[1] = public.get_user_firm_id()::text
+    AND public.can_access_document(
+          CASE
+            WHEN (storage.foldername(name))[3] ~
+                 '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+            THEN ((storage.foldername(name))[3])::uuid
+          END
+        )
   );
 
 -- Client storage reads are curated, not just client-scoped: reuse the
@@ -2921,6 +2932,10 @@ CREATE POLICY "Client users can read their own client's files"
         )
   );
 
+-- Migration 012 (F2 fix): the same document_id scoping as the SELECT policy
+-- above, closing the narrower write-side gap it would otherwise leave open
+-- (a planted file in a folder the writer can't read still inherits the read
+-- access of whoever legitimately owns that folder).
 CREATE POLICY "Staff can upload files under their firm"
   ON storage.objects FOR INSERT TO authenticated
   WITH CHECK (
@@ -2928,6 +2943,13 @@ CREATE POLICY "Staff can upload files under their firm"
     AND public.is_firm_staff()
     AND public.has_permission('documents.upload')
     AND (storage.foldername(name))[1] = public.get_user_firm_id()::text
+    AND public.can_access_document(
+          CASE
+            WHEN (storage.foldername(name))[3] ~
+                 '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+            THEN ((storage.foldername(name))[3])::uuid
+          END
+        )
   );
 
 CREATE POLICY "Client users can upload files under their own client folder"
