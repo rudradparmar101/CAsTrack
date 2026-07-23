@@ -1385,11 +1385,47 @@ CREATE TRIGGER on_document_version_removed
   AFTER DELETE ON public.document_versions
   FOR EACH ROW EXECUTE FUNCTION public.handle_document_version_removed();
 
+-- 9.5b doc<->task client consistency (migration 018, Phase 14.1b finding A3).
+-- attachDocumentToTaskAction enforces documents.client_id === the linked
+-- task's client_id at the app layer only — nothing stopped the same
+-- mismatch via a raw PostgREST UPDATE from any documents.approve holder.
+-- Same "RLS/app checks can't express this, a data-integrity trigger can"
+-- pattern as tasks.assigned_to/reviewer_id/department_id's firm checks
+-- (migrations 015/016).
+CREATE OR REPLACE FUNCTION public.guard_document_task_client_consistency()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NEW.task_id IS NOT NULL
+     AND (TG_OP = 'INSERT' OR NEW.task_id IS DISTINCT FROM OLD.task_id OR NEW.client_id IS DISTINCT FROM OLD.client_id) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.tasks t WHERE t.id = NEW.task_id AND t.client_id = NEW.client_id
+    ) THEN
+      RAISE EXCEPTION 'A document''s client_id must match the client_id of the task it is linked to';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER guard_document_task_client
+  BEFORE INSERT OR UPDATE ON public.documents
+  FOR EACH ROW EXECUTE FUNCTION public.guard_document_task_client_consistency();
+
 -- 9.6 Client billing (Phase 12 / migration 004): invoice immutability,
 -- receipt validity + settlement maintenance, gapless issue RPC, ledger view.
 
 -- Invoice immutability guard (legal requirement: issued invoices are never
 -- edited — cancel + reissue). Same guard-trigger pattern as 9.2 (F1).
+-- Migration 018 (Phase 14.1b, finding A4): status/amount_received/
+-- tds_received were NOT frozen, so any billing.manage holder could directly
+-- fake an invoice's paid state with zero receipts, bypassing
+-- apply_receipts_to_invoice() and the receipts/receipt_history audit trail
+-- entirely. Fixed via the same transaction-local session-variable technique
+-- as record_dsc_movement() — apply_receipts_to_invoice() sets
+-- app.settlement_update before its own legitimate settlement UPDATE, and
+-- this trigger requires that flag for any OTHER caller trying to change
+-- those three columns once the invoice is non-draft. Direct cancellation
+-- (a real, existing action) is explicitly exempted, unchanged.
 CREATE OR REPLACE FUNCTION public.guard_firm_invoice()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
@@ -1440,11 +1476,18 @@ BEGIN
       IF OLD.amount_received <> 0 OR OLD.tds_received <> 0 THEN
         RAISE EXCEPTION 'Cannot cancel an invoice with receipts applied — remove or reallocate its receipts first';
       END IF;
+    ELSIF NEW.status IS DISTINCT FROM OLD.status
+       OR NEW.amount_received IS DISTINCT FROM OLD.amount_received
+       OR NEW.tds_received IS DISTINCT FROM OLD.tds_received
+    THEN
+      -- Migration 018: status/amount_received/tds_received may ONLY change
+      -- via apply_receipts_to_invoice()'s own settlement recomputation
+      -- (flagged via app.settlement_update) — never via a direct UPDATE from
+      -- any other caller, however permitted at the RLS layer.
+      IF current_setting('app.settlement_update', true) IS DISTINCT FROM 'true' THEN
+        RAISE EXCEPTION 'status, amount_received, and tds_received can only change via a recorded receipt (apply_receipts_to_invoice) or by cancelling the invoice';
+      END IF;
     END IF;
-
-    -- issued ⇄ partially_paid ⇄ paid moves are trigger-derived from receipts;
-    -- receipts writes are billing.manage-gated, so no separate actor check
-    -- is needed here beyond the column freeze above.
   END IF;
 
   RETURN NEW;
@@ -1569,6 +1612,11 @@ CREATE TRIGGER log_receipt_mutation
 -- handle_receipt_change() invokes this on every receipts write, including
 -- service-role-driven ones (verify scripts, future backfills) that have no
 -- JWT and thus no auth.uid() to check against.
+-- Migration 018 (A4 fix): sets a transaction-local flag (cleared
+-- automatically at COMMIT/ROLLBACK — never persists across connections in
+-- Supabase's pooled setup) so guard_firm_invoice() can tell this function's
+-- own legitimate settlement recomputation apart from any other direct
+-- UPDATE to status/amount_received/tds_received.
 CREATE OR REPLACE FUNCTION public.apply_receipts_to_invoice(p_invoice_id UUID)
 RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
@@ -1584,6 +1632,8 @@ BEGIN
       RAISE EXCEPTION 'Invoice not found in your firm';
     END IF;
   END IF;
+
+  PERFORM set_config('app.settlement_update', 'true', true);
 
   UPDATE public.firm_invoices i
   SET amount_received = r.amt,

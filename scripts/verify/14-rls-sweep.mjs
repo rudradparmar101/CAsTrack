@@ -82,6 +82,9 @@ const ID = {
   invoiceB: 'f0000000-0000-4000-8000-000000146001',
   invoiceFrozenProbe: 'e0000000-0000-4000-8000-000000146301',
   invoiceItemsProbeA: 'e0000000-0000-4000-8000-000000146401',
+  invoiceSettlementProbe: 'e0000000-0000-4000-8000-000000146501',
+  receiptSettlementProbe: 'e0000000-0000-4000-8000-000000146502',
+  invoiceCancelProbe: 'e0000000-0000-4000-8000-000000146601',
   invoiceItemA: 'e0000000-0000-4000-8000-000000146102',
   invoiceItemB: 'f0000000-0000-4000-8000-000000146101',
   receiptA: 'e0000000-0000-4000-8000-000000147001',
@@ -418,12 +421,62 @@ async function seed(admin) {
   // entirely separate from invoiceA/invoiceB so this probe's own status/
   // amount_received mutation (the finding itself) never contaminates any
   // other check that reads invoiceA.
+  //
+  // NOTE (2026-07-24, Phase 14.1b Part C): Part A's probe run (BEFORE
+  // migration 018 was applied) legitimately flipped this row to
+  // status='paid'/amount_received=5000 — that WAS the finding. Now that
+  // 018's fix is live, status/amount_received/tds_received are frozen for
+  // any direct UPDATE too (not just via guard_firm_invoice's pre-existing
+  // frozen columns), so this row can never be reset back to 'issued' by
+  // seed() either — same permanent-state lesson as invoiceA. The seed below
+  // matches its actual, permanent, live state exactly, same as invoiceA's
+  // own note above.
   await up(admin, 'firm_invoices', {
-    id: ID.invoiceFrozenProbe, firm_id: ID.firmA, client_id: ID.clientA1, status: 'issued',
+    id: ID.invoiceFrozenProbe, firm_id: ID.firmA, client_id: ID.clientA1, status: 'paid',
     financial_year: '2026-27', created_by: paId, invoice_seq: 99,
     invoice_number: `${TAG}-frozen-probe`, invoice_date: '2026-01-01', total_amount: 5000,
-    issued_at: '2026-01-01T00:00:00Z',
+    issued_at: '2026-01-01T00:00:00Z', amount_received: 5000, tds_received: 0,
   });
+
+  // Two more dedicated, already-'issued' invoices (Migration 018 Part C
+  // probes) — same "seed already in the target state via INSERT, never
+  // UPDATE-transition into it" pattern as invoiceFrozenProbe above.
+  // invoiceSettlementProbe: total_amount matches a single 5000 receipt
+  // exactly, so apply_receipts_to_invoice() legitimately settles it to
+  // 'paid' — the case migration 018 must NOT break. INSERT-if-absent only,
+  // same reasoning as invoiceCancelProbe below: once the settlement probe
+  // legitimately moves it to 'paid', re-seeding status='issued' on a later
+  // run would itself be a distinct, non-receipt-backed change — correctly
+  // rejected by the very fix this migration adds.
+  {
+    const { data: existingSettlementProbe } = await admin.from('firm_invoices').select('id').eq('id', ID.invoiceSettlementProbe).maybeSingle();
+    if (!existingSettlementProbe) {
+      await admin.from('firm_invoices').insert({
+        id: ID.invoiceSettlementProbe, firm_id: ID.firmA, client_id: ID.clientA1, status: 'issued',
+        financial_year: '2026-27', created_by: paId, invoice_seq: 98,
+        invoice_number: `${TAG}-settlement-probe`, invoice_date: '2026-01-01', total_amount: 5000,
+        issued_at: '2026-01-01T00:00:00Z',
+      });
+    }
+  }
+  // invoiceCancelProbe: issued, zero money applied yet — the exact
+  // precondition cancelInvoiceAction's own guard requires. INSERT-if-absent
+  // only, never upsert: once the cancellation probe below actually cancels
+  // it, guard_firm_invoice correctly makes that PERMANENT ("A cancelled
+  // invoice cannot be modified" — cancelled is terminal, by design, same as
+  // invoiceA's own accidental lesson earlier in this phase) — re-seeding
+  // with status='issued' on a later run would then be rejected, not a no-op.
+  {
+    const { data: existingCancelProbe } = await admin.from('firm_invoices').select('id').eq('id', ID.invoiceCancelProbe).maybeSingle();
+    if (!existingCancelProbe) {
+      await admin.from('firm_invoices').insert({
+        id: ID.invoiceCancelProbe, firm_id: ID.firmA, client_id: ID.clientA1, status: 'issued',
+        financial_year: '2026-27', created_by: paId, invoice_seq: 97,
+        invoice_number: `${TAG}-cancel-probe`, invoice_date: '2026-01-01', total_amount: 3000,
+        issued_at: '2026-01-01T00:00:00Z',
+      });
+    }
+  }
 
   // On-account receipt (invoice_id NULL — migration 006's addition, confirmed
   // LIVE on this project even though project_context.md/DECISIONS.md/
@@ -1522,40 +1575,122 @@ async function main() {
   // ==========================================================================
 
   {
+    // 1. Cross-client link REJECTED on UPDATE (the original finding — now
+    // fixed by migration 018's guard_document_task_client trigger).
     const { data: before } = await admin.from('documents').select('client_id, task_id').eq('id', ID.docTaskless).single();
     const { data, error } = await ep.from('documents').update({ task_id: ID.taskGst }).eq('id', ID.docTaskless).select('client_id, task_id').single();
-    const linked = !error && data && data.task_id === ID.taskGst;
-    const mismatched = linked && data.client_id !== ID.clientA1; // taskGst belongs to clientA1; docTaskless belongs to clientA3
-    R('FINDING-CHECK doc<->task consistency: EP (documents.approve) can link docTaskless (client A3) to taskGst (client A1) via raw UPDATE — client_id/task_id now MISMATCHED, no DB constraint stops it',
-      linked && mismatched, error?.message || `client_id: ${data?.client_id} (expected clientA3 ${ID.clientA3}), task_id: ${data?.task_id}, task's own client is clientA1 ${ID.clientA1}`);
-    // restore
-    await admin.from('documents').update({ task_id: before?.task_id ?? null }).eq('id', ID.docTaskless);
+    R('Migration 018 fix (A3): EP is REJECTED linking docTaskless (client A3) to taskGst (client A1) via UPDATE — cross-client mismatch now blocked',
+      !!error && !data, error ? `denied: ${error.message}` : `UPDATE SUCCEEDED — client_id: ${data?.client_id}, task_id: ${data?.task_id} (mismatch not blocked)`);
+    // sanity: confirm the doc's task_id is genuinely unchanged (the UPDATE didn't partially apply)
+    const { data: after } = await admin.from('documents').select('client_id, task_id').eq('id', ID.docTaskless).single();
+    R('Migration 018 fix (A3), sanity: docTaskless\'s task_id is UNCHANGED after the rejected UPDATE', after?.task_id === before?.task_id, `before: ${before?.task_id}, after: ${after?.task_id}`);
+  }
+  {
+    // 2. Cross-client link REJECTED on INSERT too (a brand-new document
+    // created already carrying a mismatched task_id/client_id pair).
+    const newDocId = randomUUID();
+    const { data, error } = await ep.from('documents').insert({
+      id: newDocId, firm_id: ID.firmA, client_id: ID.clientA3, task_id: ID.taskGst,
+      name: 'A3 doc wrongly linked to A1\'s task at INSERT time', approval_status: 'pending', visible_to_client: false, uploaded_by: ids.epId,
+    }).select().single();
+    R('Migration 018 fix (A3): EP is REJECTED creating a NEW document with client_id=A3 but task_id pointing at an A1 task — cross-client mismatch blocked on INSERT too',
+      !!error && !data, error ? `denied: ${error.message}` : 'INSERT SUCCEEDED — cross-client mismatch not blocked on INSERT');
+    if (data) await admin.from('documents').delete().eq('id', newDocId); // in case it wrongly succeeded
+  }
+  {
+    // 3. Same-client link still SUCCEEDS on both UPDATE and INSERT — no
+    // regression to the normal attach-document-to-task / upload flows.
+    // docInternalPending (client A1) <-> taskIncomeTax (ALSO client A1) is a
+    // genuine same-client pairing. Uses PA (partner), not EP: EP is only a
+    // gstA department member, and taskIncomeTax is a DIFFERENT department —
+    // she'd be denied by the pre-existing staff_can_access_task() department
+    // scoping regardless of this migration, which would test the wrong
+    // thing. PA bypasses department scoping entirely (partner), isolating
+    // this check to the one thing migration 018 could have broken.
+    const { data: goodData, error: goodError } = await pa.from('documents').update({ task_id: ID.taskIncomeTax }).eq('id', ID.docInternalPending).select('client_id, task_id').single();
+    R('Migration 018 fix (A3): PA relinking docInternalPending (client A1) to taskIncomeTax (ALSO client A1) still SUCCEEDS — same-client link, no regression',
+      !goodError && goodData?.task_id === ID.taskIncomeTax, goodError?.message || `task_id: ${goodData?.task_id}`);
+    await admin.from('documents').update({ task_id: ID.taskGst }).eq('id', ID.docInternalPending); // restore original link for idempotent re-runs
+    const newDocId = randomUUID();
+    const { data: insData, error: insError } = await ep.from('documents').insert({
+      id: newDocId, firm_id: ID.firmA, client_id: ID.clientA1, task_id: ID.taskGst,
+      name: 'same-client INSERT-time link, no regression', approval_status: 'pending', visible_to_client: false, uploaded_by: ids.epId,
+    }).select('id').single();
+    R('Migration 018 fix (A3): EP creating a NEW document with matching client_id/task_id still SUCCEEDS on INSERT — no regression',
+      !insError && !!insData, insError?.message);
+    if (insData) await admin.from('documents').delete().eq('id', newDocId);
   }
 
   // ==========================================================================
-  // 19e. PHASE 14.1b — A4: guard_firm_invoice frozen-column gap. status /
-  // amount_received / tds_received are NOT in the frozen-column list — only
-  // checked when OLD.status <> 'draft' anyway, and even then, these three
-  // are the ones intentionally excluded (trigger-derived from receipts).
-  // Probe: can a billing.manage user directly overwrite an ISSUED invoice's
-  // status/amount_received to fake a payment, bypassing receipts entirely?
+  // 19e. PHASE 14.1b — A4: guard_firm_invoice frozen-column gap, FIXED by
+  // migration 018. status/amount_received/tds_received may now change ONLY
+  // via apply_receipts_to_invoice()'s own transaction-local flag, or via the
+  // pre-existing legitimate direct 'cancelled' transition.
   // ==========================================================================
 
   {
-    // invoiceFrozenProbe was seeded ALREADY 'issued' (via INSERT, not an
-    // UPDATE transition) specifically so this test never has to fight
-    // guard_firm_invoice's own frozen-column list to set up its precondition.
-    const { data, error } = await ep.from('firm_invoices').update({ status: 'paid', amount_received: 5000, tds_received: 0 }).eq('id', ID.invoiceFrozenProbe).select();
-    const faked = !error && (data || []).length === 1 && data[0].status === 'paid' && Number(data[0].amount_received) === 5000;
-    R('FINDING-CHECK guard_firm_invoice: EP (billing.manage) can directly UPDATE an issued invoice\'s status to \'paid\' and set amount_received, with ZERO receipt ever created — bypasses apply_receipts_to_invoice() entirely',
-      faked, error?.message || `status: ${data?.[0]?.status}, amount_received: ${data?.[0]?.amount_received}`);
-    // sanity: confirm no receipt was created for this "payment"
-    const { data: receipts } = await admin.from('receipts').select('id').eq('invoice_id', ID.invoiceFrozenProbe);
-    R('guard_firm_invoice finding, sanity check: zero receipts exist for invoiceFrozenProbe despite it now showing status=paid/amount_received=5000', (receipts || []).length === 0, `receipts found: ${receipts?.length}`);
-    // No restore: status/amount_received/tds_received are NOT in the frozen
-    // list (that is the finding), so re-running this exact update on the
-    // next sweep run is an idempotent no-op — nothing to clean up, and
-    // nothing else in this suite reads invoiceFrozenProbe.
+    // 1. The original finding, re-proven as now REJECTED: EP attempts to
+    // directly fake a DIFFERENT payment amount on invoiceFrozenProbe (which
+    // already carries status=paid/amount_received=5000 from Part A's
+    // pre-fix probe run — using a genuinely different target value here
+    // forces a real IS DISTINCT FROM change, so this isn't a same-value
+    // no-op that would pass trivially either way).
+    const { error } = await ep.from('firm_invoices').update({ status: 'partially_paid', amount_received: 1234, tds_received: 56 }).eq('id', ID.invoiceFrozenProbe).select();
+    R('Migration 018 fix (A4): EP is REJECTED directly changing invoiceFrozenProbe\'s status/amount_received/tds_received to new values — the original bypass is closed',
+      !!error, error ? `denied: ${error.message}` : 'UPDATE SUCCEEDED — money-path integrity gap still open');
+    const { data: unchanged } = await admin.from('firm_invoices').select('status, amount_received, tds_received').eq('id', ID.invoiceFrozenProbe).single();
+    R('Migration 018 fix (A4), sanity: invoiceFrozenProbe\'s settlement columns are UNCHANGED after the rejected UPDATE', unchanged?.status === 'paid' && Number(unchanged?.amount_received) === 5000, JSON.stringify(unchanged));
+  }
+  {
+    // 2. The legitimate path still works: EP calls apply_receipts_to_invoice()
+    // for a FRESH invoice with a REAL receipt recorded first, so the
+    // settlement recomputation reflects genuine money received.
+    const { error: recErr } = await admin.from('receipts').upsert({
+      id: ID.receiptSettlementProbe, firm_id: ID.firmA, client_id: ID.clientA1,
+      invoice_id: ID.invoiceSettlementProbe, amount: 5000, mode: 'upi', created_by: ids.paId,
+    }, { onConflict: 'id' });
+    const { error } = await ep.rpc('apply_receipts_to_invoice', { p_invoice_id: ID.invoiceSettlementProbe });
+    const { data: settled } = await admin.from('firm_invoices').select('status, amount_received').eq('id', ID.invoiceSettlementProbe).single();
+    R('Migration 018 fix (A4): EP\'s legitimate apply_receipts_to_invoice() call (backed by a real receipt) still SUCCEEDS and correctly settles the invoice',
+      !recErr && !error && settled?.status === 'paid' && Number(settled?.amount_received) === 5000,
+      `receipt insert: ${recErr?.message || 'ok'}, rpc: ${error?.message || 'ok'}, resulting status: ${settled?.status}, amount_received: ${settled?.amount_received}`);
+  }
+  {
+    // 3. set_config SCOPE — the exemption flag must NOT leak beyond its own
+    // transaction. Immediately after the legitimate RPC call above (which
+    // ran, set the flag, and committed within its own transaction), a
+    // SEPARATE direct UPDATE attempt on the SAME invoice, same connection
+    // pool, must still be REJECTED — proving the is_local=true flag did not
+    // persist into this new statement/transaction. This is the fix's own
+    // failure mode: Supabase pools connections, so a leaked (non-local) flag
+    // would hand the exemption to whatever runs next on that connection.
+    const { error } = await ep.from('firm_invoices').update({ amount_received: 9999 }).eq('id', ID.invoiceSettlementProbe).select();
+    R('Migration 018 fix (A4), set_config scope: immediately AFTER a legitimate apply_receipts_to_invoice() call, a direct UPDATE to amount_received is STILL REJECTED — the transaction-local flag did not leak into this new request',
+      !!error, error ? `denied: ${error.message}` : 'UPDATE SUCCEEDED — the settlement flag leaked past its own transaction (pooled-connection risk realized)');
+  }
+  {
+    // 4. Cancellation — the real, pre-existing direct-UPDATE path — still
+    // works end to end. This mirrors cancelInvoiceAction's own update
+    // payload EXACTLY (status/cancellation_reason/cancelled_at only, read
+    // directly from src/app/(dashboard)/billing/actions.ts rather than
+    // assumed), against a fresh issued invoice with zero money applied yet
+    // (the action's own precondition). Cancellation is terminal (guard_firm_
+    // invoice rejects any further UPDATE once cancelled), so on a re-run
+    // where a PRIOR run already cancelled this invoice, re-attempting the
+    // same cancel would itself be correctly rejected ("already cancelled")
+    // — that's a business-rule rejection, not evidence of a broken fix, so
+    // this check tolerates "already cancelled from a previous run" as an
+    // equally valid pass.
+    const { data: current } = await admin.from('firm_invoices').select('status').eq('id', ID.invoiceCancelProbe).single();
+    if (current?.status === 'cancelled') {
+      R('Migration 018 fix (A4), cancellation: invoiceCancelProbe is already cancelled from a previous run — the legitimate direct path already succeeded once, terminal state confirmed', true, 'status: cancelled (from prior run)');
+    } else {
+      const { data, error } = await ep.from('firm_invoices').update({
+        status: 'cancelled', cancellation_reason: 'RLS sweep cancellation probe', cancelled_at: new Date().toISOString(),
+      }).eq('id', ID.invoiceCancelProbe).eq('firm_id', ID.firmA).select();
+      R('Migration 018 fix (A4), cancellation: EP\'s cancelInvoiceAction-equivalent UPDATE (status=cancelled + reason + timestamp, matching the real action\'s exact payload) still SUCCEEDS — the legitimate direct path is unaffected',
+        !error && (data || []).length === 1 && data[0].status === 'cancelled', error?.message || `rows: ${data?.length}`);
+    }
   }
 
   // ==========================================================================

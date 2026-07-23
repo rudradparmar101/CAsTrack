@@ -15,12 +15,11 @@
 --     same firm, producing a genuinely inconsistent row no policy or
 --     constraint rejects.
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- ⚠ NOT YET APPLIED — drafted for Jay's review in Supabase Studio. Do not
--- apply via MCP or any automated path; this is a manual-apply-only gate,
--- same as every migration before it (001–017). Per the migration convention
--- (project_context.md header block / docs/DECISIONS.md): once applied and
--- confirmed, THIS FILE'S OWN HEADER must be updated to APPLIED <date> in the
--- same session that folds it into schema.sql.
+-- ✅ APPLIED 2026-07-24 — confirmed clean in Supabase Studio by Jay
+-- (guard_document_task_client trigger present on documents;
+-- apply_receipts_to_invoice()'s set_config confirmed is_local => true).
+-- Folded into schema.sql in the same session per the migration convention
+-- (project_context.md header block / docs/DECISIONS.md).
 --
 -- The ENTIRE file is wrapped in one BEGIN;...COMMIT; block. Postgres DDL is
 -- transactional: if ANY statement below fails, the WHOLE migration rolls
