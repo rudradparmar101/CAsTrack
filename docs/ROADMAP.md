@@ -258,7 +258,11 @@ confirmed by Jay before any further work.
       Manual entry is v1. The value is deadline discipline, not typing.
 - [ ] Exit gate: notice -> task -> reminder -> response -> ARN end to end, RLS-verified
 
-## Phase 14 — Final RLS pass + committed policy tests
+## Phase 14 — Final RLS pass + committed policy tests [x] COMPLETE (2026-07-24)
+**All four sub-phases done: 14.1 (exhaustive sweep) → 14.2 (fix session for 14.1's 7 findings)
+→ 14.1b (close remaining coverage gaps, 2 more findings) → 14.3 (migration 006 reconciliation).
+See `project_context.md` §4.25 for the full findings ledger across all of Phase 14 and a plain
+statement of what this project can now honestly claim about its own RLS posture.**
 
 ### Phase 14.1 — Exhaustive probe-driven RLS verification sweep [x]
 - [x] `scripts/verify/14-rls-sweep.mjs` (committed, self-seeding, idempotent — 116/116 assertions
@@ -286,10 +290,39 @@ confirmed by Jay before any further work.
       migration 006 (receipt_history + nullable receipts.invoice_id) is confirmed LIVE on the
       project despite project_context.md/DECISIONS.md describing it as drafted-not-applied —
       **resolved same-day, see Phase 14.3 below.**
-- [ ] 14.1b (not this session): probe `document_versions`, `firm_invoice_items`,
-      `firm_invoice_counters`, `subscription_invoices` (zero coverage so far); a real
-      super-admin positive-path check; `lookup_client_invitation()`; the doc↔task
-      client-consistency probe.
+### Phase 14.1b — Close remaining RLS sweep coverage gaps [x] COMPLETE (2026-07-24)
+**Every item on 14.1's own follow-up list is now closed.** `document_versions`,
+`firm_invoice_items`, `firm_invoice_counters`, `subscription_invoices` — zero coverage before —
+each got a full role-matrix × cross-firm pass; `firm_invoice_counters` (the sequential invoice
+numbering table) was probed hard per explicit instruction — cross-firm read, cross-firm
+counter-advance write, and cross-firm insert-a-new-row all correctly denied. **All four tables:
+SAFE, no findings.** A real super-admin positive-AND-negative-path check (never done before):
+PSA reads across both firms and performs legitimate platform writes (plans, firms), and is
+correctly DENIED writing to any tenant table (clients/tasks/firm_invoices/receipts) — matches
+`ROLES_AND_RLS.md`'s documented design exactly, both directions. **SAFE.**
+`lookup_client_invitation()` (incidentally probed during 14.2) is now a permanent committed
+check. Two real findings surfaced and fixed via migration 018 (single Studio gate):
+- **A3 (medium, data integrity):** no DB constraint ensured `documents.client_id` matched its
+  linked task's `client_id` — `attachDocumentToTaskAction` enforced it at the app layer only; a
+  raw PostgREST `UPDATE` by any `documents.approve` holder could link a document to a task
+  belonging to a different client. Fixed via a new `guard_document_task_client` trigger (same
+  shape as migrations 015/016's task firm-checks). Proved in both directions — cross-client
+  rejected on INSERT and UPDATE, same-client link unaffected on both.
+- **A4 (HIGH, money-path integrity):** `guard_firm_invoice()` did not freeze `status`/
+  `amount_received`/`tds_received` — any `billing.manage` holder could directly mark an issued
+  invoice `'paid'` with a fabricated `amount_received` and **zero receipts ever created**,
+  bypassing `apply_receipts_to_invoice()` and the entire receipts/`receipt_history` audit trail.
+  Fixed via the same transaction-local session-variable technique `record_dsc_movement()`
+  already established. Verified the flag's scope directly (`is_local => true` in the live
+  function, then empirically: a legitimate settlement call succeeds, and a *separate* direct
+  UPDATE immediately after — same pooled connection — is still rejected, proving no leak).
+  Cancellation (the real, pre-existing direct action) reproduced byte-for-byte from
+  `cancelInvoiceAction`'s own update payload and confirmed unaffected.
+190/190 sweep checks pass, stable across repeated runs. Committed across two commits
+(`e530a24` Part A/draft, `7ad87f3` applied/folded/probed).
+**Coverage statement: nothing in the schema now has zero probe coverage.** Every table, every
+SECURITY DEFINER function taking a caller-supplied identifier, and both super-admin directions
+have been exercised by a real signed-in role at least once.
 
 ### Phase 14.2 — Fix session for 14.1's findings [x] COMPLETE (2026-07-23)
 **All 7 of Phase 14.1's original findings (F0–F5, plus the migration-006 documentation item)

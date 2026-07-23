@@ -1021,6 +1021,48 @@ in full** — every item from the original 7 findings through this systemic audi
 and probed. See `docs/ROADMAP.md` for 14.1b (unprobed tables, not started) and 14.3 (already
 resolved earlier this engagement).
 
+### 2026-07-24 — Phase 14.1b CLOSE-OUT: migration 018 applied — Phase 14 is now FULLY COMPLETE
+**Decision:** close every item on 14.1's own follow-up list in one pass — the four
+zero-coverage tables, a real super-admin positive/negative path check, and the two named gaps
+(`lookup_client_invitation()`, doc↔task consistency) — verification-first, batching any real
+fixes into a single migration.
+**A1/A2/A5 — probed, no migration needed:** `document_versions`, `firm_invoice_items`,
+`firm_invoice_counters`, `subscription_invoices` each got a full role-matrix × cross-firm pass.
+`firm_invoice_counters` (sequential invoice numbering) was probed hard on purpose — cross-firm
+read, cross-firm counter-advance write, and cross-firm insert all correctly denied. Super-admin
+was proven in BOTH directions for the first time: PSA reads across both firms and performs
+legitimate platform writes (plans, firms), and is correctly denied writing to any tenant table
+— matching `ROLES_AND_RLS.md`'s documented design exactly. `lookup_client_invitation()`
+(incidentally probed during 14.2) is now a permanent committed check. All SAFE, no findings.
+**A3 (medium) and A4 (HIGH) — real findings, fixed via migration 018:**
+- A3: no constraint ensured a document's `client_id` matched its linked task's `client_id` —
+  `attachDocumentToTaskAction` checked this at the app layer only. Fixed via a new
+  `guard_document_task_client` trigger, same shape as migrations 015/016's task firm-checks.
+- A4: `guard_firm_invoice()` did not freeze `status`/`amount_received`/`tds_received` — any
+  `billing.manage` holder could directly fake an invoice's paid state with zero receipts,
+  bypassing `apply_receipts_to_invoice()` and the entire receipts audit trail. Fixed via the
+  same transaction-local session-variable technique `record_dsc_movement()` established.
+**Rationale for the fix's own risk being tested, not assumed:** the flag `apply_receipts_to_
+invoice()` sets to exempt itself is transaction-local (`is_local => true`), which matters
+specifically because Supabase pools connections — a leaked, session-level flag would hand the
+exemption to whatever ran next on that same connection. Confirmed `is_local => true` directly
+in the live function, then proved empirically: a legitimate settlement call succeeds, and a
+SEPARATE direct UPDATE immediately after (same pooled connection) is still rejected.
+Cancellation was reproduced byte-for-byte from `cancelInvoiceAction`'s own real update payload
+(read from `src/app/(dashboard)/billing/actions.ts`, not assumed) and confirmed unaffected. F0
+(migration 010) was specifically re-confirmed after this migration rewrote `apply_receipts_to_
+invoice()`'s body — cross-tenant rejection still holds.
+**Status:** resolved and shipped, committed across two commits (`e530a24` draft, `7ad87f3`
+applied/folded/probed). 190/190 sweep checks pass, stable across repeated runs.
+**THIS CLOSES PHASE 14 IN FULL.** Every finding from 14.1 through 14.1b is now applied and
+probed. Full ledger, and a plain statement of what this project can and cannot honestly claim
+about its RLS posture as a result, is in `project_context.md` §4.25. Two items remain
+open, deliberately, not oversight: whether `reviewer_id` reassignment should require
+`tasks.assign` (undecided), and `firm_has_feature()`'s Phase-15 rework (tracked in
+`docs/ROADMAP.md`). One verification (`rls_auto_enable()`'s live-fire behavior on a genuinely
+new table) was handed to Jay to run himself, since it requires DDL the standing guardrail
+reserves for Studio.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)
