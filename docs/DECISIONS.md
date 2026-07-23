@@ -854,6 +854,58 @@ is already open in context and this is a genuine cross-tenant data-integrity gap
 firm-membership gap is drafted (migration 015) but not yet applied — see the next entry once
 confirmed. F5 remains open.
 
+### 2026-07-23 — Follow-up fixed and applied: assigned_to firm-membership check (migration 015)
+**Decision:** fix the assigned_to firm-membership gap now, in the same session, rather than
+deferring to 14.1b — the tasks-assignment trigger from migration 014 was already open in
+context, and this is a genuine cross-tenant data-integrity gap, not a nicety that can wait.
+Migration 015 extends `enforce_task_assignment_permission()` to also fire `BEFORE INSERT` and
+validate that `assigned_to` belongs to `NEW.firm_id` whenever it's being set — unconditionally,
+including for service-role writes, since this is a data-integrity check (a foreign-key-style
+validity constraint), not an authorization decision the way the `tasks.assign` permission gate
+is. Applied cleanly in Studio, folded into `schema.sql`, header updated to
+`✅ APPLIED 2026-07-23`.
+**Proof:** `scripts/verify/14-rls-sweep.mjs` gained 4 cases, all passing: cross-firm rejected on
+INSERT; cross-firm rejected on UPDATE, even for a `tasks.assign` holder (proving the firm check
+fires independently of, and in addition to, the permission check); same-firm assignment still
+succeeds on both paths (no regression); and a direct service-role write with a cross-firm value
+is also rejected (confirming the data-integrity check applies unconditionally, unlike the
+permission gate). 135/135 sweep checks pass at that point.
+**Status:** resolved and shipped, committed separately (`bb48a76`).
+
+### 2026-07-23 — Follow-up fixed and applied: reviewer_id/department_id firm-membership checks (migration 016)
+**Decision:** while confirming migration 015's fix, per Jay's explicit instruction to check
+whether the same class of bug existed on `tasks`' other two profile/department FKs before
+moving past F4 — it did, on both. `reviewer_id` had the identical exposure `assigned_to` did
+(no firm check on INSERT or UPDATE), and was never gated by `tasks.assign` at all, unlike
+`assigned_to`. `department_id` had a narrower, partner-only gap: the employee INSERT branch was
+already implicitly firm-safe via department membership, but the partner branch bypassed that
+check entirely, and the matching partner UPDATE path had the same hole. Migration 016 extends
+the same trigger function with two more unconditional firm-membership checks, same shape as
+`assigned_to`'s. Applied cleanly in Studio, folded into `schema.sql`, header updated to
+`✅ APPLIED 2026-07-23`.
+**Scoped deliberately to data integrity only:** neither new check touches the `tasks.assign`
+permission gate. Whether `reviewer_id` assignment should also require `tasks.assign` — the way
+`assigned_to` now does — is a real, open question, but answering it silently inside a
+data-integrity fix is exactly how undocumented policy happens. **Recorded here as an open
+question for a later, deliberate decision, NOT acted on:** should changing `reviewer_id` on an
+existing task require `has_permission('tasks.assign')`, mirroring `assigned_to`'s migration-014
+gate? Today it does not — any caller who can pass the department-updater (or partner) UPDATE
+policy can change `reviewer_id` freely, with only the new firm-membership check (migration 016)
+in place. No action taken on this question; flag it again before shipping any feature that
+leans on `reviewer_id`'s current semantics.
+**Proof, including a check that a shared trigger function wasn't silently broken by this
+migration:** verified directly against the live database (`pg_trigger`, not inferred) that
+`enforce_task_assignment`'s timing was unchanged after its function body was replaced —
+`tgtype = 23` (`BEFORE INSERT OR UPDATE`), `tgenabled = 'O'` — and re-ran migration 015's four
+`assigned_to` cases to confirm they still pass after this migration touched the same shared
+function (extending a shared trigger is exactly the place a later migration could quietly break
+an earlier fix). `scripts/verify/14-rls-sweep.mjs` gained 6 new cases, all passing: cross-firm
+`reviewer_id` rejected on both INSERT and UPDATE; cross-firm `department_id` rejected for a
+partner on both INSERT and UPDATE; same-firm values for both still succeed on both paths.
+141/141 sweep checks pass.
+**Status:** resolved and shipped, committed separately (`b5e7cab`). F5 remains open; the
+`reviewer_id`/`tasks.assign` question above is open, not scheduled.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)

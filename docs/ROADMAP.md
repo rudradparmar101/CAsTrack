@@ -364,12 +364,34 @@ confirmed by Jay before any further work.
       `assigned_to` has no firm-membership validation at all (a task could be assigned to a
       user in a completely different firm). Migration 015 (drafted, not yet applied) closes
       it — see below.
-- [ ] Follow-up (found 2026-07-23 while probing F4, not one of the original 7 findings):
-      `tasks.assigned_to` has no check anywhere that the referenced profile belongs to the
-      same firm as the task. Migration 015 extends `enforce_task_assignment_permission()` to
-      also fire on INSERT and validate firm membership on `assigned_to` whenever it's set —
-      a data-integrity check, not a permission gate, so it applies even to service-role
-      writes. Drafted, pushed, **not yet applied** — pending Jay's Studio confirmation.
+- [x] Follow-up (found 2026-07-23 while probing F4, not one of the original 7 findings):
+      **fixed and applied.** `tasks.assigned_to` had no check anywhere that the referenced
+      profile belongs to the same firm as the task. Migration 015 extends
+      `enforce_task_assignment_permission()` to also fire on INSERT and validate firm
+      membership on `assigned_to` whenever it's set — a data-integrity check, not a permission
+      gate, so it applies even to service-role writes. Applied cleanly in Studio, folded into
+      `schema.sql`, header updated to APPLIED. Proved via 4 cases (cross-firm rejected on
+      INSERT and UPDATE, same-firm still succeeds on both, service-role write with a
+      cross-firm value also rejected) — 135/135 sweep checks pass at that point. Committed
+      separately (`bb48a76`). **While confirming this, per Jay's explicit ask, checked whether
+      `reviewer_id`/`department_id` have the same gap — both did, see the next item.**
+- [x] Follow-up (found 2026-07-23 while confirming the `assigned_to` fix above, not one of the
+      original 7 findings): **fixed and applied.** `reviewer_id` had the identical exposure to
+      `assigned_to` (no firm check on INSERT or UPDATE, and never permission-gated by
+      `tasks.assign` either). `department_id` had a narrower, partner-only gap — the employee
+      INSERT branch was implicitly firm-safe via department membership, but the partner branch
+      bypassed that check entirely, and the equivalent partner UPDATE path had the same hole.
+      Migration 016 extends `enforce_task_assignment_permission()` with two more unconditional
+      firm-membership checks, same shape as `assigned_to`'s. Applied cleanly in Studio, folded
+      into `schema.sql`, header updated to APPLIED. Verified directly against `pg_trigger` that
+      the trigger's timing (`tgtype 23` = `BEFORE INSERT OR UPDATE`) was unchanged after the
+      function body was replaced, and re-ran migration 015's four cases to confirm they still
+      pass after this migration touched the same shared function. Proved via 6 new cases
+      (cross-firm `reviewer_id`/`department_id` rejected on both INSERT and UPDATE, same-firm
+      values for both still succeed on both paths) — 141/141 sweep checks pass. Committed
+      separately (`b5e7cab`). **Recorded as an open question, not acted on:** should
+      `reviewer_id` assignment also require `tasks.assign`, the way `assigned_to` now does?
+      See `docs/DECISIONS.md`.
 - [ ] F5 (low, architectural decision): decide whether task-less documents should be
       department-scoped for employees (would need a schema change — clients don't carry a
       department today) or formally accept firm-wide reach via clients.view as correct.
