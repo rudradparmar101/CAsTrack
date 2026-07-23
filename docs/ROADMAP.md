@@ -312,10 +312,25 @@ confirmed by Jay before any further work.
       with no profiles row proves the exemption itself works — and service_role succeeds) —
       122/122 sweep checks pass. Committed separately (`2ae59b6`). **Known follow-on for
       Phase 15:** see that phase's new item on `firm_has_feature()`.
-- [ ] F2 (high, architectural decision): either formally document the staff storage policy's
-      firm-wide (not department-scoped) reach in ROLES_AND_RLS.md, or rewrite it to join
-      through `documents` and re-apply `staff_can_access_task()`/`clients.view`, mirroring the
-      client storage policy's existing `can_access_document()` pattern.
+- [x] F2 (high, architectural decision): **fixed and applied 2026-07-23** — Jay's call was
+      option (b), rewrite, not document-as-intentional: the client storage policy already
+      joined through `can_access_document()`, so the least-trusted role was more tightly
+      scoped at storage than staff were, which is an oversight, not a trust model. Migration
+      012 adds `can_access_document(document_id)` (path segment `[3]`) to BOTH the staff
+      storage SELECT policy AND the staff storage INSERT policy — the INSERT side had the
+      identical gap (no document_id check), found while investigating, and closed in the same
+      migration since the SELECT fix alone would have upgraded its severity (a planted file
+      in a scoped folder inherits the read access of whoever legitimately owns that folder).
+      Upload ordering verified against `src/lib/documents/actions.ts` (documents row always
+      exists, and access is already established, before the storage write in both the
+      new-document and new-version flows) — no regression risk from the ordering dependency.
+      Applied cleanly in Studio, folded into `schema.sql`, migration header updated to
+      APPLIED. Proved via 6 cases in `scripts/verify/14-rls-sweep.mjs` (no-access employee
+      denied both download and list, in-scope employee unaffected, partner bypass intact,
+      client_user policy unaffected, a real upload + new-version upload succeed end to end,
+      and a no-access employee is denied writing into another document's folder — the
+      INSERT-side fix proven directly). 126/126 sweep checks pass. Committed separately
+      (`fe4b219`).
 - [ ] F3 (medium): add a target-role exclusion to the `profiles` DELETE policy so a partner
       cannot remove a co-partner — needs Jay's call on whether partner-on-partner removal
       should ever be possible at all.

@@ -758,6 +758,37 @@ the majority of staff.
 **Status:** not yet acted on — deliberately out of scope for migration 011 (per explicit
 instruction not to touch that migration for this). Tracked in `docs/ROADMAP.md` Phase 15.
 
+### 2026-07-23 — Phase 14.2, F2 fixed and applied: staff storage scoped to can_access_document()
+**Decision:** rewrite the staff storage SELECT policy, not document its firm-wide reach as
+intentional — the two options the sweep doc offered. Migration 012 adds
+`can_access_document(document_id)` (path segment `[3]` of
+`{firm_id}/{client_id}/{document_id}/{uuid}.{ext}`) to both the staff storage SELECT policy AND
+the staff storage INSERT policy, mirroring the client storage policy's existing pattern.
+Applied cleanly in Studio, folded into `schema.sql`, migration header updated to
+`✅ APPLIED 2026-07-23`.
+**Rationale:** the deciding factor was that the client storage policy already joined through
+`can_access_document()` — so the least-trusted role (`client_user`) was already more tightly
+scoped at storage than staff were, which is an oversight, not a deliberate trust-model
+asymmetry. Formally documenting firm-wide staff reach as intentional would have meant recording
+a boundary the codebase couldn't actually back up, given it directly contradicted the
+department-scoping model already enforced for `tasks`/`documents`.
+**A second gap found and fixed in the same migration:** the staff storage INSERT policy had an
+identical, narrower hole (no `document_id` check), letting a staff member with
+`documents.upload` write bytes into another document's folder without any department access to
+it. The SELECT fix alone would have *upgraded* this gap's severity — once storage reads are
+properly scoped, a planted file inherits the read access of whoever legitimately owns that
+folder — so shipping SELECT without INSERT would have been worse than shipping neither.
+**Proof, not policy-reading:** verified the path-segment index (`[3]`) against the existing,
+already-correct client policy rather than re-deriving it; verified upload ordering against
+`src/lib/documents/actions.ts` directly (`documents` row always exists, and access is already
+established, before the storage write, in both the new-document and new-version flows).
+`scripts/verify/14-rls-sweep.mjs` gained 6 cases, all passing: no-access employee denied both
+download and list; in-scope employee unaffected; partner bypass intact; `client_user`'s
+untouched policy unaffected; a real upload plus a same-folder second upload (mirroring a
+new-version upload) succeed end to end; and a no-access employee is denied *writing* into
+another document's folder — the INSERT-side fix proven directly. 126/126 sweep checks pass.
+**Status:** resolved and shipped, committed separately (`fe4b219`). F3 through F5 remain open.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)
