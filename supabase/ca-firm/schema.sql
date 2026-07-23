@@ -1261,6 +1261,13 @@ CREATE TRIGGER record_task_stage_history
 -- assigned_to belongs to the task's own firm — a data-integrity check, not
 -- a permission gate, so it applies even to service-role writes (unlike the
 -- permission-gate branch above, which is UPDATE-only and unchanged).
+-- Migration 016 adds the same firm-membership checks for reviewer_id
+-- (identical exposure to assigned_to, and never permission-gated by
+-- tasks.assign either — whether it should be is an open question, not yet
+-- decided, see docs/DECISIONS.md) and department_id (a narrower, partner-
+-- only gap — the employee INSERT branch was already implicitly firm-safe
+-- via department membership, but partners bypassed it entirely). The
+-- function keeps its original name despite its grown scope, to avoid churn.
 CREATE OR REPLACE FUNCTION public.enforce_task_assignment_permission()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -1285,6 +1292,31 @@ BEGIN
       WHERE p.id = NEW.assigned_to AND p.firm_id = NEW.firm_id
     ) THEN
       RAISE EXCEPTION 'assigned_to must be a member of the same firm as the task';
+    END IF;
+  END IF;
+
+  -- Firm-membership validation (migration 016): reviewer_id, same shape as
+  -- assigned_to above. Data integrity, not a permission gate.
+  IF NEW.reviewer_id IS NOT NULL
+     AND (TG_OP = 'INSERT' OR NEW.reviewer_id IS DISTINCT FROM OLD.reviewer_id) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.profiles p
+      WHERE p.id = NEW.reviewer_id AND p.firm_id = NEW.firm_id
+    ) THEN
+      RAISE EXCEPTION 'reviewer_id must be a member of the same firm as the task';
+    END IF;
+  END IF;
+
+  -- Firm-membership validation (migration 016): department_id is NOT NULL,
+  -- so checked on every INSERT and every UPDATE that changes it. Closes the
+  -- partner-only gap ("Partners can update any firm task" / the partner
+  -- branch of the INSERT policy never validated this).
+  IF TG_OP = 'INSERT' OR NEW.department_id IS DISTINCT FROM OLD.department_id THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.departments d
+      WHERE d.id = NEW.department_id AND d.firm_id = NEW.firm_id
+    ) THEN
+      RAISE EXCEPTION 'department_id must belong to the same firm as the task';
     END IF;
   END IF;
 

@@ -807,6 +807,89 @@ async function main() {
       !!error, error ? `denied: ${error.message}` : 'UPDATE SUCCEEDED — data-integrity check does not apply to service_role');
     await admin.from('tasks').update({ assigned_to: ids.evId }).eq('id', ID.taskA2Gst); // restore for idempotent re-runs
   }
+
+  // MIGRATION 016 FIX PROBE: reviewer_id and department_id now get the same
+  // unconditional firm-membership check assigned_to already has. Six cases.
+  {
+    // 1. Cross-firm reviewer_id on INSERT: E0 creates a Firm A task with
+    // reviewer_id pointing at EVB (Firm B) — must be REJECTED.
+    const newTaskId = randomUUID();
+    const { error } = await e0.from('tasks').insert({
+      id: newTaskId, firm_id: ID.firmA, client_id: ID.clientA2, department_id: ids.gstA,
+      title: `${TAG} migration 016 cross-firm reviewer INSERT probe`, due_date: '2027-01-31',
+      reviewer_id: ids.evbId, created_by: ids.e0Id,
+    }).select('id').single();
+    R('Migration 016 fix: E0 is REJECTED creating a Firm A task with reviewer_id pointing at EVB (Firm B) — firm-membership check on INSERT',
+      !!error, error ? `denied: ${error.message}` : 'INSERT SUCCEEDED — cross-firm reviewer_id gap still open');
+    await admin.from('tasks').delete().eq('id', newTaskId); // in case it wrongly succeeded
+  }
+  {
+    // 2. Cross-firm reviewer_id on UPDATE: E0 (via tasks.update_department
+    // alone — reviewer_id was never gated by tasks.assign, before or after
+    // this migration) attempts to set taskA2Gst's reviewer_id to EVB — must
+    // be REJECTED by the new firm check even though no permission ever
+    // blocked reviewer_id changes.
+    const { error } = await e0.from('tasks').update({ reviewer_id: ids.evbId }).eq('id', ID.taskA2Gst).select();
+    R('Migration 016 fix: E0 is REJECTED setting taskA2Gst\'s reviewer_id to EVB (Firm B) via tasks.update_department alone — firm-membership check on UPDATE',
+      !!error, error ? `denied: ${error.message}` : 'UPDATE SUCCEEDED — cross-firm reviewer_id gap still open');
+  }
+  {
+    // 3. Cross-firm department_id on INSERT, PARTNER: PA creates a Firm A
+    // task with department_id pointing at Firm B's GST department — must be
+    // REJECTED. This was the original follow-up finding (partner branch
+    // bypassed the department-membership check entirely).
+    const newTaskId = randomUUID();
+    const { error } = await pa.from('tasks').insert({
+      id: newTaskId, firm_id: ID.firmA, client_id: ID.clientA2, department_id: ids.gstB,
+      title: `${TAG} migration 016 cross-firm department INSERT probe (partner)`, due_date: '2027-01-31',
+      created_by: ids.paId,
+    }).select('id').single();
+    R('Migration 016 fix: PA (partner) is REJECTED creating a Firm A task with department_id pointing at Firm B\'s GST department — firm-membership check on INSERT',
+      !!error, error ? `denied: ${error.message}` : 'INSERT SUCCEEDED — cross-firm department_id gap still open');
+    await admin.from('tasks').delete().eq('id', newTaskId); // in case it wrongly succeeded
+  }
+  {
+    // 4. Cross-firm department_id on UPDATE, PARTNER: PA attempts to move
+    // taskA2Gst into Firm B's GST department — must be REJECTED. "Partners
+    // can update any firm task"'s implicit WITH CHECK never validated this.
+    const { error } = await pa.from('tasks').update({ department_id: ids.gstB }).eq('id', ID.taskA2Gst).select();
+    R('Migration 016 fix: PA (partner) is REJECTED moving taskA2Gst into Firm B\'s GST department — firm-membership check on UPDATE',
+      !!error, error ? `denied: ${error.message}` : 'UPDATE SUCCEEDED — cross-firm department_id gap still open');
+  }
+  {
+    // 5. Same-firm reviewer_id still succeeds on both INSERT and UPDATE — no
+    // regression.
+    const newTaskId = randomUUID();
+    const { data: insData, error: insError } = await ep.from('tasks').insert({
+      id: newTaskId, firm_id: ID.firmA, client_id: ID.clientA2, department_id: ids.gstA,
+      title: `${TAG} migration 016 same-firm reviewer INSERT probe`, due_date: '2027-01-31',
+      reviewer_id: ids.evId, created_by: ids.epId,
+    }).select('id, reviewer_id').single();
+    const { data: updData, error: updError } = await pa.from('tasks').update({ reviewer_id: ids.evId }).eq('id', ID.taskA2Gst).select('id, reviewer_id').single();
+    R('Migration 016 fix: same-firm reviewer_id still SUCCEEDS on both INSERT and UPDATE (no regression)',
+      !insError && insData?.reviewer_id === ids.evId && !updError && updData?.reviewer_id === ids.evId,
+      `insert: ${insError?.message || 'ok'}, update: ${updError?.message || 'ok'}`);
+    if (insData) await admin.from('tasks').delete().eq('id', newTaskId);
+    await admin.from('tasks').update({ reviewer_id: null }).eq('id', ID.taskA2Gst); // restore for idempotent re-runs
+  }
+  {
+    // 6. Same-firm department_id still succeeds on both INSERT and UPDATE —
+    // no regression. UPDATE: PA moves taskA2Gst from gstA to incomeTaxA and
+    // back (both Firm A departments), proving partners can still legitimately
+    // move tasks between their own firm's departments.
+    const newTaskId = randomUUID();
+    const { data: insData, error: insError } = await pa.from('tasks').insert({
+      id: newTaskId, firm_id: ID.firmA, client_id: ID.clientA2, department_id: ids.incomeTaxA,
+      title: `${TAG} migration 016 same-firm department INSERT probe`, due_date: '2027-01-31',
+      created_by: ids.paId,
+    }).select('id, department_id').single();
+    const { data: updData, error: updError } = await pa.from('tasks').update({ department_id: ids.incomeTaxA }).eq('id', ID.taskA2Gst).select('id, department_id').single();
+    R('Migration 016 fix: same-firm department_id still SUCCEEDS on both INSERT and UPDATE (no regression)',
+      !insError && insData?.department_id === ids.incomeTaxA && !updError && updData?.department_id === ids.incomeTaxA,
+      `insert: ${insError?.message || 'ok'}, update: ${updError?.message || 'ok'}`);
+    if (insData) await admin.from('tasks').delete().eq('id', newTaskId);
+    await admin.from('tasks').update({ department_id: ids.gstA }).eq('id', ID.taskA2Gst); // restore for idempotent re-runs
+  }
   {
     const { data, error } = await ev.from('tasks').delete().eq('id', ID.taskGst).select();
     R('tasks: EV (employee, not partner) DELETE denied (partner-only)', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);

@@ -3,12 +3,11 @@
 -- list): tasks.reviewer_id and tasks.department_id also have no firm-
 -- membership validation
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- ⚠ NOT YET APPLIED — drafted for Jay's review in Supabase Studio. Do not
--- apply via MCP or any automated path; this is a manual-apply-only gate,
--- same as every migration before it (001–015). Per the migration convention
--- (project_context.md header block / docs/DECISIONS.md): once applied and
--- confirmed, THIS FILE'S OWN HEADER must be updated to APPLIED <date> in the
--- same session that folds it into schema.sql.
+-- ✅ APPLIED 2026-07-23 — confirmed clean in Supabase Studio by Jay. Folded
+-- into schema.sql in the same session per the migration convention
+-- (project_context.md header block / docs/DECISIONS.md). Open question
+-- recorded (not acted on): should reviewer_id assignment also require
+-- tasks.assign, the way assigned_to now does? See docs/DECISIONS.md.
 --
 -- Found while confirming migration 015's assigned_to fix, per Jay's explicit
 -- ask to check whether the same class of bug existed on tasks' other two
