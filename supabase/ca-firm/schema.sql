@@ -1059,13 +1059,39 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 -- Plan/feature gating helpers (enforced in server actions; DB triggers for
 -- hard limits are deliberately deferred — see ROLES_AND_RLS.md §7).
+-- Migration 011 (F1-RPC fix): SECURITY DEFINER bypasses the billing.view-gated
+-- RLS on firm_subscriptions entirely, so the body needs its own ownership +
+-- permission check, same shape as migration 010. is_super_admin() and
+-- service_role are exempt from the OWNERSHIP check only (has_permission()
+-- already resolves true for a super_admin internally) — a platform super
+-- admin has no profiles row at all (platform_admins.user_id FKs to
+-- auth.users, not profiles), so get_user_firm_id() resolves NULL for them and
+-- a bare ownership check would wrongly reject the cross-firm visibility
+-- platform_admins exists to grant.
 CREATE OR REPLACE FUNCTION public.get_firm_plan(p_firm_id UUID)
-RETURNS public.plans AS $$
-  SELECT p.* FROM public.plans p
+RETURNS public.plans LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_result public.plans;
+BEGIN
+  IF auth.role() <> 'service_role' AND NOT public.is_super_admin() THEN
+    IF NOT public.has_permission('billing.view') THEN
+      RAISE EXCEPTION 'You do not have permission to view this firm''s plan';
+    END IF;
+
+    IF p_firm_id <> public.get_user_firm_id() THEN
+      RAISE EXCEPTION 'Firm not found';
+    END IF;
+  END IF;
+
+  SELECT p.* INTO v_result
+  FROM public.plans p
   JOIN public.firm_subscriptions s ON s.plan_id = p.id
   WHERE s.firm_id = p_firm_id AND s.status IN ('trialing', 'active', 'past_due')
   LIMIT 1;
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+  RETURN v_result;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION public.firm_has_feature(p_flag TEXT)
 RETURNS BOOLEAN AS $$

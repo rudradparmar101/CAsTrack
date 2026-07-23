@@ -99,6 +99,7 @@ const EMAIL = {
   pb: `${TAG}.pb@example.com`,     // Firm B partner
   evb: `${TAG}.evb@example.com`,   // Firm B employee, defaults
   ub1: `${TAG}.ub1@example.com`,   // Firm B / client B1 portal user
+  psa: `${TAG}.psa@example.com`,   // platform super admin — platform_admins row, NO profiles row (mirrors real bootstrap: super_admin membership is auth.users-keyed, not firm-tenant-scoped)
 };
 
 const ALL_PERMISSION_KEYS = [
@@ -359,7 +360,17 @@ async function seed(admin) {
     title: 'seed', message: 'seed notification for EV',
   });
 
-  return { paId, pa2Id, evId, e0Id, epId, edelId, pbId, evbId, ua1Id, ua2Id, ub1Id, gstA, incomeTaxA, gstB };
+  // Platform super admin: auth user + platform_admins row, deliberately NO
+  // profiles row at all — platform_admins.user_id FKs to auth.users, not
+  // profiles, and this mirrors the real bootstrap path (SQL editor / service
+  // role insert, no tenant membership). get_user_firm_id() resolves to NULL
+  // for this user (no profiles row to look up), which is exactly why
+  // get_firm_plan()'s ownership check must be bypassed for is_super_admin()
+  // rather than merely widened.
+  const psaId = await ensureUser(admin, EMAIL.psa, { name: 'PSA' });
+  await up(admin, 'platform_admins', { user_id: psaId, note: `${TAG} seed` }, 'user_id');
+
+  return { paId, pa2Id, evId, e0Id, epId, edelId, pbId, evbId, ua1Id, ua2Id, ub1Id, psaId, gstA, incomeTaxA, gstB };
 }
 
 async function putObjectIfAbsent(admin, objPath, body) {
@@ -394,6 +405,7 @@ async function main() {
   const { client: pb } = await signInAs(EMAIL.pb, PASSWORD);
   const { client: evb } = await signInAs(EMAIL.evb, PASSWORD);
   const { client: ub1 } = await signInAs(EMAIL.ub1, PASSWORD);
+  const { client: psa } = await signInAs(EMAIL.psa, PASSWORD);
 
   // ==========================================================================
   // 1. PLATFORM-LEVEL CATALOG TABLES (no firm_id — global by design)
@@ -946,27 +958,72 @@ async function main() {
   // ==========================================================================
 
   {
-    // FINDING-CHECK: get_firm_plan(p_firm_id) takes an ARBITRARY firm_id with
-    // no ownership check, is SECURITY DEFINER (bypasses firm_subscriptions'
-    // billing.view-gated RLS entirely), and has no REVOKE EXECUTE anywhere in
-    // schema.sql — so any authenticated user, including a client_user or a
-    // no-billing.view employee, can query ANY firm's plan/features by UUID.
-    const { data, error } = await e0.rpc('get_firm_plan', { p_firm_id: ID.firmA });
-    const detail = error ? `RPC denied: ${error.message} (would mean the gap is closed)` : `RPC SUCCEEDED — got plan: ${JSON.stringify(data)}`;
-    R('FINDING-CHECK get_firm_plan(): E0 (billing.view REVOKED) calling with her OWN firm\'s id still gets plan data (RPC bypasses billing.view entirely)',
-      !error && !!data, detail);
-  }
-  {
-    const { data, error } = await ev.rpc('get_firm_plan', { p_firm_id: ID.firmB });
-    const detail = error ? `RPC denied: ${error.message} (would mean the gap is closed)` : `RPC SUCCEEDED cross-firm — got Firm B's plan: ${JSON.stringify(data)}`;
-    R('FINDING-CHECK get_firm_plan(): EV (Firm A employee) calling with FIRM B\'s id gets Firm B\'s plan data — cross-firm leak via RPC',
-      !error && !!data, detail);
-  }
-  {
-    const { data, error } = await ua1.rpc('get_firm_plan', { p_firm_id: ID.firmB });
-    const detail = error ? `RPC denied: ${error.message} (would mean the gap is closed)` : `RPC SUCCEEDED cross-firm as a client_user — got: ${JSON.stringify(data)}`;
-    R('FINDING-CHECK get_firm_plan(): a client_user (UA1) can ALSO call it cross-firm — no role restriction whatsoever',
-      !error && !!data, detail);
+    // F1-RPC FIX PROBE (migration 011): get_firm_plan() is SECURITY DEFINER
+    // (bypasses the billing.view-gated RLS on firm_subscriptions entirely)
+    // and now carries a billing.view permission check plus a firm-ownership
+    // check on p_firm_id, with is_super_admin()/service_role exempted from
+    // the OWNERSHIP check only. Six cases prove the fix and its exemptions
+    // both work — not just the headline cross-firm case.
+
+    // 1. Cross-firm: EV (Firm A employee) supplying Firm B's UUID — must be
+    // rejected. This was the original F1-RPC leak (real Firm B plan data
+    // returned with no error).
+    {
+      const { error } = await ev.rpc('get_firm_plan', { p_firm_id: ID.firmB });
+      R('F1-RPC fix: EV (Firm A employee) is REJECTED calling get_firm_plan() with Firm B\'s id (cross-firm)',
+        !!error, error ? `denied: ${error.message}` : 'RPC call SUCCEEDED — cross-tenant plan leak still open');
+    }
+
+    // 2. Same-firm, WITH billing.view: EP (every permission granted) against
+    // her own Firm A — must succeed (no regression).
+    {
+      const { data, error } = await ep.rpc('get_firm_plan', { p_firm_id: ID.firmA });
+      R('F1-RPC fix: EP (Firm A, billing.view) SUCCEEDS calling get_firm_plan() against her own firm (no regression)',
+        !error && !!data, error ? `unexpectedly denied: ${error.message}` : 'succeeded as expected');
+    }
+
+    // 3. Same-firm, WITHOUT billing.view: E0 (every permission revoked)
+    // against her own Firm A — must be rejected. Proves the permission guard
+    // fires on its own, independent of ownership (E0 owns the firm
+    // relationship but still lacks billing.view). This is the exact original
+    // bypass (E0 got her own firm's plan despite billing.view being revoked).
+    {
+      const { error } = await e0.rpc('get_firm_plan', { p_firm_id: ID.firmA });
+      R('F1-RPC fix: E0 (Firm A, no billing.view) is REJECTED calling get_firm_plan() against her own firm (permission guard, independent of ownership)',
+        !!error, error ? `denied: ${error.message}` : 'RPC call SUCCEEDED with no billing.view — permission guard not enforced');
+    }
+
+    // 4. client_user: UA1 supplying Firm B's UUID — must be rejected. The
+    // original finding showed a client_user had no role restriction at all.
+    {
+      const { error } = await ua1.rpc('get_firm_plan', { p_firm_id: ID.firmB });
+      R('F1-RPC fix: UA1 (client_user) is REJECTED calling get_firm_plan() cross-firm',
+        !!error, error ? `denied: ${error.message}` : 'RPC call SUCCEEDED — client_user cross-firm leak still open');
+    }
+
+    // 5. super_admin, cross-firm: PSA (platform_admins row, deliberately NO
+    // profiles row) supplying Firm B's id — must SUCCEED. This is the
+    // regression risk the fix itself introduces: is_super_admin() must
+    // actually bypass the ownership check, not just be written to. A super
+    // admin has no profiles row (get_user_firm_id() resolves NULL for them),
+    // so if this exemption were missing or broken, this call would be wrongly
+    // rejected instead of wrongly accepted — the failure mode is silent
+    // over-restriction, not a leak, but it's still a regression worth a
+    // dedicated positive-path check.
+    {
+      const { data, error } = await psa.rpc('get_firm_plan', { p_firm_id: ID.firmB });
+      R('F1-RPC fix: PSA (platform super admin, no profiles row) SUCCEEDS calling get_firm_plan() cross-firm (is_super_admin() ownership exemption intact)',
+        !error && !!data, error ? `unexpectedly denied: ${error.message}` : 'succeeded as expected');
+    }
+
+    // 6. service_role: direct call as service_role — must succeed. Mirrors
+    // migration 010's rationale: a service-role caller has no JWT/auth.uid()
+    // to check meaningfully either way.
+    {
+      const { data, error } = await admin.rpc('get_firm_plan', { p_firm_id: ID.firmA });
+      R('F1-RPC fix: service_role call to get_firm_plan() still SUCCEEDS (exemption intact)',
+        !error && !!data, error ? `unexpectedly denied: ${error.message}` : 'succeeded as expected');
+    }
   }
   {
     // has_permission() itself: callable directly, but only ever resolves
