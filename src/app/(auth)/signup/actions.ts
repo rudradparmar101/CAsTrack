@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { validatePassword } from '@/lib/auth/password-policy';
+import { checkRateLimit, getClientIp, rateLimitMessage } from '@/lib/rate-limit';
 
 export interface SignupResult {
   success: boolean;
@@ -35,6 +36,12 @@ export async function signupCreateFirmAction(formData: FormData): Promise<Signup
   const passwordError = validatePassword(password);
   if (passwordError) {
     return { success: false, error: passwordError };
+  }
+
+  const ip = await getClientIp();
+  const rateLimit = await checkRateLimit('auth_signup', ip, 20, 3600);
+  if (!rateLimit.allowed) {
+    return { success: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) };
   }
 
   const supabase = await createClient();
@@ -97,6 +104,17 @@ export async function signupJoinFirmAction(formData: FormData): Promise<SignupRe
     return { success: false, error: passwordError };
   }
 
+  const ip = await getClientIp();
+
+  // Looser bucket than the signup call below — this is a cheap DB lookup
+  // (no email cost), so brute-force/enumeration resistance is its job, not
+  // protecting shared infrastructure. Checked BEFORE the RPC so a guessing
+  // script never even gets a real query once it trips the limit.
+  const lookupRateLimit = await checkRateLimit('invite_code_lookup', ip, 30, 3600);
+  if (!lookupRateLimit.allowed) {
+    return { success: false, error: rateLimitMessage(lookupRateLimit.retryAfterSeconds) };
+  }
+
   const supabase = await createClient();
 
   // Validate the invite code before creating the auth user
@@ -108,6 +126,13 @@ export async function signupJoinFirmAction(formData: FormData): Promise<SignupRe
   const firm = Array.isArray(firms) ? firms[0] : firms;
   if (lookupError || !firm) {
     return { success: false, error: 'Invalid invite code. Please check with a partner at your firm.' };
+  }
+
+  // Same bucket/limit as signupCreateFirmAction — a real signUp() call is a
+  // real account-creation attempt regardless of which mode it came through.
+  const signupRateLimit = await checkRateLimit('auth_signup', ip, 20, 3600);
+  if (!signupRateLimit.allowed) {
+    return { success: false, error: rateLimitMessage(signupRateLimit.retryAfterSeconds) };
   }
 
   const { data, error: authError } = await supabase.auth.signUp({

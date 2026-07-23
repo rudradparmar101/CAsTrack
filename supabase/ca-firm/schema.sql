@@ -3193,6 +3193,80 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM anon;
 REVOKE TRUNCATE, TRIGGER, REFERENCES ON ALL TABLES IN SCHEMA public FROM authenticated;
 
 -- ============================================================================
+-- 14. RATE LIMITING (migration 019) — DB-backed, since Vercel is serverless
+-- and an in-memory counter would not survive between invocations. One
+-- generic fixed-window counter table + one atomic check-and-increment
+-- function serve every public/unauthenticated endpoint (signup,
+-- invite-code lookup, forgot-password, accept-invite lookup); see the
+-- migration file's own header for the full atomicity/security-boundary
+-- reasoning and why login is deliberately NOT wired to this (client-side
+-- signInWithPassword() never reaches this server — see docs/DECISIONS.md).
+-- ============================================================================
+
+CREATE TABLE public.rate_limit_buckets (
+  bucket_key    TEXT PRIMARY KEY,
+  action        TEXT NOT NULL,
+  identifier    TEXT NOT NULL,
+  window_start  TIMESTAMPTZ NOT NULL,
+  count         INTEGER NOT NULL DEFAULT 1,
+  expires_at    TIMESTAMPTZ NOT NULL
+);
+
+COMMENT ON TABLE public.rate_limit_buckets IS
+  'Fixed-window counters for public-endpoint rate limiting. Holds IPs and/or emails as caller-supplied identifiers — personal data, RLS default-deny, no policies at all (mirrors task_stage_history). The ONLY writer is check_rate_limit() (SECURITY DEFINER). Rows are dead once past expires_at; cleanup runs from /api/cron/send-reminders.';
+
+CREATE INDEX idx_rate_limit_buckets_expires_at ON public.rate_limit_buckets (expires_at);
+
+ALTER TABLE public.rate_limit_buckets ENABLE ROW LEVEL SECURITY;
+REVOKE ALL PRIVILEGES ON public.rate_limit_buckets FROM anon;
+REVOKE TRUNCATE, TRIGGER, REFERENCES ON public.rate_limit_buckets FROM authenticated;
+-- Deliberately NO SELECT/INSERT/UPDATE/DELETE policy at all — RLS with zero
+-- policies is a hard default-deny for every role including `authenticated`.
+-- The only way to touch this table's rows is through check_rate_limit().
+
+CREATE OR REPLACE FUNCTION public.check_rate_limit(
+  p_action TEXT,
+  p_identifier TEXT,
+  p_max_attempts INT,
+  p_window_seconds INT
+)
+RETURNS TABLE(allowed BOOLEAN, retry_after_seconds INT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_window_start TIMESTAMPTZ;
+  v_expires_at   TIMESTAMPTZ;
+  v_bucket_key   TEXT;
+  v_count        INT;
+BEGIN
+  IF p_action IS NULL OR p_identifier IS NULL OR p_max_attempts IS NULL OR p_window_seconds IS NULL
+     OR p_max_attempts < 1 OR p_window_seconds < 1 THEN
+    RAISE EXCEPTION 'check_rate_limit: all arguments are required and must be positive';
+  END IF;
+
+  v_window_start := to_timestamp(floor(extract(epoch FROM now()) / p_window_seconds) * p_window_seconds);
+  v_expires_at := v_window_start + make_interval(secs => p_window_seconds);
+  v_bucket_key := p_action || ':' || p_identifier || ':' || extract(epoch FROM v_window_start)::bigint;
+
+  INSERT INTO public.rate_limit_buckets (bucket_key, action, identifier, window_start, count, expires_at)
+  VALUES (v_bucket_key, p_action, p_identifier, v_window_start, 1, v_expires_at)
+  ON CONFLICT (bucket_key) DO UPDATE SET count = rate_limit_buckets.count + 1
+  RETURNING rate_limit_buckets.count INTO v_count;
+
+  RETURN QUERY SELECT
+    v_count <= p_max_attempts,
+    GREATEST(0, ceil(extract(epoch FROM (v_expires_at - now())))::int);
+END;
+$$;
+
+COMMENT ON FUNCTION public.check_rate_limit(TEXT, TEXT, INT, INT) IS
+  'Atomic fixed-window check-and-increment for public-endpoint rate limiting. Anon-callable by necessity (every legitimate caller is unauthenticated) — see migration 019 for why that is safe. Never touches any table but rate_limit_buckets.';
+
+GRANT EXECUTE ON FUNCTION public.check_rate_limit(TEXT, TEXT, INT, INT) TO anon, authenticated;
+
+-- ============================================================================
 -- END OF SCHEMA
 -- Bootstrap checklist (fresh project):
 --   1. Run this file in the SQL editor (after creating the storage bucket,

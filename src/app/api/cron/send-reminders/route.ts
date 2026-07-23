@@ -29,6 +29,19 @@ export async function GET(request: NextRequest) {
 
   const admin = createAdminClient();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+
+  // Rate-limit bucket cleanup (migration 019) — reuses this existing daily
+  // cron rather than adding a new one, same precedent as the Phase 13.2 DSC
+  // expiry alerts. A row past its own expires_at is unconditionally dead, so
+  // this is a plain unconditional delete, not an idempotency-sensitive one.
+  const { error: cleanupError, count: expiredCount } = await admin
+    .from('rate_limit_buckets')
+    .delete({ count: 'exact' })
+    .lt('expires_at', new Date().toISOString());
+  if (cleanupError) {
+    console.error('[cron/send-reminders] rate_limit_buckets cleanup failed:', cleanupError.message);
+  }
+
   const { data: firms, error: firmsError } = await admin.from('firms').select('id, name');
   if (firmsError) {
     return NextResponse.json({ error: firmsError.message }, { status: 500 });
@@ -58,5 +71,9 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ firmsProcessed: results.length, results });
+  return NextResponse.json({
+    firmsProcessed: results.length,
+    rateLimitBucketsExpired: expiredCount ?? 0,
+    results,
+  });
 }

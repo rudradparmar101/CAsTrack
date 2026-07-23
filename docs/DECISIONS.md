@@ -1063,6 +1063,109 @@ open, deliberately, not oversight: whether `reviewer_id` reassignment should req
 new table) was handed to Jay to run himself, since it requires DDL the standing guardrail
 reserves for Studio.
 
+### 2026-07-24 — Login is exempt from public-endpoint rate limiting, deliberately, not overlooked
+**Decision:** `/login` is not wired to the new DB-backed rate limiter (migration 019), and this
+is recorded as a decision, not left as a silent gap in the implementation.
+**Rationale:** `(auth)/login/page.tsx` is a client component that calls
+`supabase.auth.signInWithPassword()` directly from the browser against Supabase's own Auth API —
+that request never touches this Next.js server, so no server-side gate (including this one) can
+see it happen. Credential-stuffing protection on login today is Supabase's own native Auth rate
+limiting, not anything this project built or controls. The actual fix — moving login into a
+server action, mirroring how `signupCreateFirmAction`/`signupJoinFirmAction` already call
+`auth.signUp()` server-side — is a real change to the login code path, not just "add a gate in
+front of it," and was explicitly scoped out of the rate-limiting session rather than done
+quietly alongside it.
+**Status:** active, deliberate exception. **Revisit trigger:** before onboarding paid customers,
+or if credential-stuffing abuse is actually observed against `/login` — whichever comes first.
+Also recorded in `project_context.md`'s Phase 14 "what this project cannot claim" list (§4.25),
+since it's exactly the kind of thing that needs to be stated accurately to a firm, not just
+tracked internally.
+
+### 2026-07-24 — Public-endpoint rate limiting: DB-backed, fixed-window, fail-open, migration 019
+**Decision:** every public/unauthenticated endpoint except login (see the entry above) is now
+rate-limited via one generic table (`rate_limit_buckets`) and one atomic
+`check_rate_limit(action, identifier, max_attempts, window_seconds)` SECURITY DEFINER RPC, called
+from the relevant server action/page before any real work (Supabase call, RPC lookup, email
+send) happens. Applied cleanly in Studio, folded into `schema.sql`, migration header updated to
+`✅ APPLIED 2026-07-24`.
+**Why DB-backed, not in-memory:** the app runs on Vercel (serverless) — a `Map`/LRU/module-level
+counter would not survive between invocations (each may land on a different instance), so it
+would silently do nothing in production while appearing to work in `npm run dev`'s single
+long-lived process. This is the same class of constraint that already forced every other
+cross-cutting write path in this schema (notifications, DSC custody, invoice settlement) through
+a DB-level primitive rather than app memory.
+**Why one generic function, not one per endpoint:** every endpoint needs the identical primitive
+— "has this action+identifier been seen more than N times in the current window" — with only the
+action name, identifier, limit, and window differing per call site. One table/function avoids
+four near-drifting copies (the exact failure mode the migration-header convention exists to
+prevent for a different reason).
+**Atomicity — the actual hard requirement, not a nice-to-have:** `INSERT ... ON CONFLICT
+(bucket_key) DO UPDATE SET count = count + 1` is a single atomic statement; Postgres serializes
+concurrent conflicting inserts (the losing transaction(s) wait on the row lock, then apply the
+UPDATE against the now-committed row), so there is no window where two concurrent callers both
+read and increment from the same stale count. **Proved, not assumed:** 40 simultaneous RPC calls
+against a limit of 20 landed at EXACTLY 20 allowed / 20 denied, cross-checked directly against
+the bucket row's own `count` column (=40) — a naive SELECT-then-UPDATE implementation would have
+undercounted this.
+**Limits, per endpoint** (all fixed-window, keyed primarily by IP): `auth_signup` 20/hr/IP (both
+signup modes — generous enough for a firm onboarding 15 employees from one office IP);
+`invite_code_lookup` 30/hr/IP (checked BEFORE the `lookup_firm_by_invite_code` RPC, so a
+brute-force script never reaches even that cheap query once it trips — largely defense-in-depth,
+since invite codes are 48-bit random); `forgot_password` 8/hr/email AND 15/hr/IP, both checked
+unconditionally (the highest-priority endpoint — it deliberately bypasses Supabase's own recovery
+rate limit, see the 2026-07-18 entry above, so it had zero upstream protection before this);
+`accept_invite_lookup` 20/hr/IP, shared between the accept-invite page's own token lookup and the
+accept action's re-validation (also largely defense-in-depth — tokens are 128-bit random).
+**Enumeration-safety preserved on forgot-password:** both the per-email and per-IP checks
+increment unconditionally, before `generateLink()`'s account-existence check runs — a real and a
+fake email hit their bucket identically, so the rate-limit outcome never correlates with account
+existence, only with "this identifier was already checked N times." **Proved, not assumed:**
+`scripts/verify/15-rate-limiting.mjs` tripped two different emails' own per-email limits through
+the real UI and confirmed byte-identical rendered messages.
+**Fail-open, per the session's own lean, agreed:** if `check_rate_limit()`'s call itself errors
+(network blip, DB hiccup), the request is allowed through and the failure is logged loudly
+(`console.error`, matching the existing `[forgot-password]`/`[email]` logging convention). A
+transient outage in this defense-in-depth layer must not become an outage for signup or password
+reset, especially given other independent layers already exist (Supabase's native signup rate
+limit, 48/128-bit entropy on codes/tokens). **Proved, not assumed:** the verify script forced two
+genuine Postgres errors (an invalid argument, a nonexistent function name) and confirmed both
+reach the exact `{ error }` shape `evaluateRateLimit()` branches on in `src/lib/rate-limit.ts`;
+that branch's own allow-and-log behavior was then confirmed by direct code inspection (the
+TypeScript module isn't importable into the plain-Node verify script — no `ts-node`/`tsx` in this
+project — same "verified by code inspection, not independently exercised live" allowance the
+Phase 7 findings doc already used for a case Playwright genuinely can't construct).
+**IP identification:** `x-forwarded-for`'s first entry (fallback `x-real-ip`, fallback a shared
+`unknown` bucket). Reasoned as trustworthy on Vercel because its edge network is the actual
+internet-facing TCP terminator in front of every serverless invocation — a client cannot open a
+raw connection directly to the origin function, so Vercel's own edge-set value, not anything a
+client sent, is what a request arrives with. **Verified against the live production deployment**
+(praxida.in) after pushing, specifically for the failure mode named going in — a limiter that
+resolves every request to one shared/constant identifier would lock out every user at once the
+moment real traffic arrived. See the verification note immediately below this entry for the
+result.
+**Cleanup:** folded into the existing `/api/cron/send-reminders` route (a plain
+`DELETE ... WHERE expires_at < now()` at the top, before the reminder sweep) rather than a new
+cron — same precedent as Phase 13.2's DSC expiry alerts reusing this same route.
+**Security boundary of `check_rate_limit()` being anon-callable:** unlike every other
+`SECURITY DEFINER` function in this schema, this one has no tenant-ownership check to make —
+every legitimate caller is by definition unauthenticated, so "does the caller own this
+firm/client" has no meaning here. Its actual boundary is structural: the function can never read
+or write any table but `rate_limit_buckets`, and that table holds nothing but a counter (action
+label, caller-supplied identifier, count, two timestamps) — no data-exposure or cross-tenant-write
+path exists through it. The one residual risk (someone calling it directly via RPC with an
+identifier they don't "own," e.g. spoofing another IP, to pre-exhaust that bucket) is a nuisance
+false-rate-limit-hit against one bucket, never worse — accepted for the same reason
+`lookup_firm_by_invite_code`/`lookup_client_invitation` accept being anon-callable: there is no
+way to serve unauthenticated callers from Postgres without the `anon` role being able to invoke
+the function directly.
+**Proof, not policy-reading:** `scripts/verify/15-rate-limiting.mjs` (19/19, new) — concurrency,
+window reset, fail-open, cron cleanup, and a real-UI Playwright pass confirming normal error
+paths and a legitimate under-limit user are unaffected. Full `14-rls-sweep.mjs` re-run 190/190,
+no regression. `rate_limit_buckets` independently confirmed unreadable by a pure anon client
+(`permission denied`, not an empty result — the stronger of the two possible denials, same
+signature migration 017 established project-wide).
+**Status:** resolved and shipped.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)

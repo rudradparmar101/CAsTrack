@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { provisionClientFromInvite } from '@/lib/provisioning';
+import { checkRateLimit, getClientIp, rateLimitMessage } from '@/lib/rate-limit';
 
 export interface AcceptInviteResult {
   success: boolean;
@@ -37,6 +38,13 @@ export async function acceptClientInviteAction(
   }
   if (!password || password.length < 6) {
     return { success: false, error: 'Password must be at least 6 characters.' };
+  }
+
+  // Same bucket as the accept-invite page's own lookup — see that file.
+  const ip = await getClientIp();
+  const rateLimit = await checkRateLimit('accept_invite_lookup', ip, 20, 3600);
+  if (!rateLimit.allowed) {
+    return { success: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) };
   }
 
   // Re-validate the token server-side (RPC only — there is deliberately no

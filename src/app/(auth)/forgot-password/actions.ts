@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendEmail } from '@/lib/email/resend';
 import { passwordResetEmail } from '@/lib/email/templates';
+import { checkRateLimit, combineRateLimits, getClientIp, rateLimitMessage } from '@/lib/rate-limit';
 import type { ActionResult } from '@/lib/types';
 
 // Fixed floor so the response takes roughly the same time whether the email
@@ -34,6 +35,26 @@ export async function requestPasswordResetAction(formData: FormData): Promise<Ac
     // Empty input isn't an enumeration vector (no email was even looked up)
     // — fine to respond immediately with a real validation error.
     return { success: false, error: 'Email is required.' };
+  }
+
+  // Two independent buckets, BOTH checked unconditionally before the
+  // account-existence lookup below — a real and a fake email hit their
+  // per-email bucket identically either way, so the rate-limit outcome never
+  // correlates with whether the account exists (only with "this identifier
+  // was already checked N times"), preserving the enumeration-safety
+  // property this endpoint depends on (docs/DECISIONS.md, 2026-07-18).
+  // Per-email catches one victim hammered from rotating IPs; per-IP catches
+  // many addresses sprayed from one attacker. This is also the costliest
+  // endpoint in the whole rate-limiting pass — every call sends a real
+  // Resend email and, unlike Supabase's own recovery endpoint, has no
+  // upstream protection of its own (see migration 019's header).
+  const ip = await getClientIp();
+  const rateLimit = combineRateLimits([
+    await checkRateLimit('forgot_password_email', email, 8, 3600),
+    await checkRateLimit('forgot_password_ip', ip, 15, 3600),
+  ]);
+  if (!rateLimit.allowed) {
+    return { success: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) };
   }
 
   try {

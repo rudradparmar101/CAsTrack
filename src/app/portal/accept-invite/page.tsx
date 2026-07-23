@@ -1,8 +1,9 @@
 import React from 'react';
 import Link from 'next/link';
-import { FileWarning, Building2 } from 'lucide-react';
+import { FileWarning, Building2, Clock } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { checkRateLimit, getClientIp, rateLimitMessage } from '@/lib/rate-limit';
 import { AcceptInviteForm } from './accept-invite-form';
 
 /**
@@ -25,6 +26,15 @@ export default async function AcceptInvitePage({
     return <InvalidInvite />;
   }
 
+  // Shared bucket with acceptClientInviteAction below (same lookup, same
+  // abuse surface — token brute force/probing). Checked before the RPC so a
+  // guessing script never gets a real query once it trips the limit.
+  const ip = await getClientIp();
+  const rateLimit = await checkRateLimit('accept_invite_lookup', ip, 20, 3600);
+  if (!rateLimit.allowed) {
+    return <TooManyAttempts retryAfterSeconds={rateLimit.retryAfterSeconds} />;
+  }
+
   const supabase = await createClient();
   const { data: invitations } = await supabase.rpc('lookup_client_invitation', {
     p_token: token,
@@ -45,6 +55,22 @@ export default async function AcceptInvitePage({
         Set a password to activate your account and track your compliance work.
       </p>
       <AcceptInviteForm token={token} email={invitation.email} />
+    </PageShell>
+  );
+}
+
+function TooManyAttempts({ retryAfterSeconds }: { retryAfterSeconds: number }) {
+  return (
+    <PageShell>
+      <div className="mx-auto mb-5 h-16 w-16 rounded-2xl bg-[var(--color-warning-bg)] flex items-center justify-center">
+        <Clock className="h-8 w-8 text-[var(--color-warning)]" />
+      </div>
+      <h1 className="text-2xl font-bold text-[var(--color-text)] mb-2 text-center">
+        Too many attempts
+      </h1>
+      <p className="text-[var(--color-text-secondary)] text-center">
+        {rateLimitMessage(retryAfterSeconds)}
+      </p>
     </PageShell>
   );
 }

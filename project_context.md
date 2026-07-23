@@ -1,6 +1,26 @@
 # Project Context — CA Firm Management SaaS
 
-> **Last updated:** 2026-07-23 (**Phase 14.2, F0 fixed and applied** — migration 010 closes
+> **Last updated:** 2026-07-24 (**Public-endpoint rate limiting, off-roadmap, applied** — migration
+> 019 adds a DB-backed, serverless-safe rate limiter (`rate_limit_buckets` + atomic
+> `check_rate_limit()` RPC) wired into every public/unauthenticated endpoint: signup (both
+> create-firm and join-firm modes), the join-firm invite-code lookup, forgot-password (the
+> highest-priority target — it deliberately bypasses Supabase's own recovery rate limit, see the
+> 2026-07-18 entry below), and client portal invite acceptance. `/login` is a deliberate,
+> documented exception — it's a client-side `signInWithPassword()` call that never reaches this
+> server, so no server-side gate can see it; recorded as a decision with a revisit trigger in
+> `docs/DECISIONS.md`, not left as a silent gap. Verified empirically, not by reading the SQL:
+> `scripts/verify/15-rate-limiting.mjs` (19/19) proves atomic counting under 40 simultaneous
+> concurrent callers (exactly 20 allowed against a limit of 20 — a naive SELECT-then-UPDATE would
+> have undercounted), a fixed window actually resetting, fail-open on a genuine RPC error, the
+> cron cleanup actually deleting expired rows, and a live-UI pass confirming normal error paths
+> and a legitimate under-limit user are both unaffected, with enumeration-safety re-confirmed
+> under real rate-limiting conditions (two different emails hitting their own per-email limit
+> render byte-identical messages). Full 190-check `14-rls-sweep.mjs` re-run clean, no regression;
+> `rate_limit_buckets` independently confirmed unreadable by a pure anon client (`permission
+> denied`, not an empty result). IP identification uses `x-forwarded-for` (first entry), verified
+> against the live production deployment (praxida.in, Vercel) post-push — see §4.26 for the
+> result. `npm run build` + `npm run lint` both clean throughout. Previous entry, 2026-07-23 —
+> **Phase 14.2, F0 fixed and applied** — migration 010 closes
 > `apply_receipts_to_invoice()`'s cross-tenant write primitive (Phase 14.1's critical finding).
 > The function is SECURITY DEFINER, so its body was the only security boundary that existed for
 > it, and until now that boundary was absent. Fix adds a `billing.manage` permission check and a
@@ -680,7 +700,51 @@ Closes every item on 14.1's own follow-up list, surfacing two more real findings
 
 *Can claim:* every table in the public schema has been exercised by a real signed-in role across the full role matrix (partner, employee with every permission variant, client_user) with an explicit cross-firm case; every `SECURITY DEFINER` function taking a caller-supplied identifier has been enumerated (via `pg_proc`, not a remembered list) and proven, not just read, to reject cross-firm/permission-less/client_user callers where it should; the money-settlement path (`firm_invoices` → `receipts` → `receipt_history`) cannot be forged by a direct write bypassing the receipts trail, and that guarantee has been tested for connection-pool leakage specifically, not just asserted; a document's client attribution cannot silently drift from the task it's attached to; default table/view privileges no longer over-grant `anon` anywhere, and that hardening is now self-reinforcing for every future table via `rls_auto_enable()`.
 
-*Cannot claim:* this sweep tested every *combination* of role × table × operation exhaustively — it targeted cross-firm isolation and the specific gaps each table's policy shape made plausible, not a brute-force cross product. It does not cover storage-bucket edge cases beyond what Phase 14.1/14.2 already walked through, nor does it constitute a penetration test against non-RLS attack surfaces (application-layer XSS/CSRF, dependency vulnerabilities, infrastructure misconfiguration outside Postgres). Two items are explicitly deferred by design, not oversight (`reviewer_id`/`tasks.assign`, `firm_has_feature()`'s Phase-15 rework) and are tracked, not silently dropped. And the one remaining `rls_auto_enable()` live-fire check needs Jay's own hands in Studio to close — everything else in this ledger has been proven by a real signed-in role, not inferred from policy text.
+*Cannot claim:* this sweep tested every *combination* of role × table × operation exhaustively — it targeted cross-firm isolation and the specific gaps each table's policy shape made plausible, not a brute-force cross product. It does not cover storage-bucket edge cases beyond what Phase 14.1/14.2 already walked through, nor does it constitute a penetration test against non-RLS attack surfaces (application-layer XSS/CSRF, dependency vulnerabilities, infrastructure misconfiguration outside Postgres). Two items are explicitly deferred by design, not oversight (`reviewer_id`/`tasks.assign`, `firm_has_feature()`'s Phase-15 rework) and are tracked, not silently dropped. And the one remaining `rls_auto_enable()` live-fire check needs Jay's own hands in Studio to close — everything else in this ledger has been proven by a real signed-in role, not inferred from policy text. **Also cannot claim (2026-07-24, rate limiting):** `/login` has no rate limiting of our own — `signInWithPassword()` is called directly from the browser and never reaches this server, so credential-stuffing protection there is Supabase's native Auth limiting, not anything this project built or controls. Every other public endpoint (signup, invite-code lookup, forgot-password, accept-invite) is now DB-backed rate-limited (migration 019); login is a deliberate, recorded exception, not a gap discovered later — see `docs/DECISIONS.md`'s 2026-07-24 entry for the revisit trigger.
+
+### 4.26 Public-endpoint rate limiting (off-roadmap, 2026-07-24, migration 019)
+
+Closes §6 item 9. Full design rationale, per-endpoint limits, atomicity argument, fail-open
+justification, and the `check_rate_limit()` security-boundary statement are in
+`docs/DECISIONS.md`'s 2026-07-24 entries — not repeated here. Summary of what shipped:
+
+- **Schema:** `rate_limit_buckets` (RLS enabled, zero policies — hard default-deny, mirrors
+  `task_stage_history`; `anon` grants revoked, `authenticated` trimmed) + `check_rate_limit()`
+  (`SECURITY DEFINER`, atomic `INSERT ... ON CONFLICT DO UPDATE`, anon-callable by necessity).
+- **Wired into:** `signupCreateFirmAction`/`signupJoinFirmAction` (`auth_signup`, 20/hr/IP),
+  `signupJoinFirmAction`'s invite-code RPC (`invite_code_lookup`, 30/hr/IP, checked first),
+  `requestPasswordResetAction` (`forgot_password`, 8/hr/email AND 15/hr/IP, both unconditional),
+  the accept-invite page's own lookup AND `acceptClientInviteAction` (shared
+  `accept_invite_lookup` bucket, 20/hr/IP). `/login` deliberately excluded — see
+  `docs/DECISIONS.md`'s 2026-07-24 entry; also flagged in §0's "cannot claim" note above.
+- **Cleanup:** folded into `/api/cron/send-reminders` (a plain delete of expired rows before the
+  existing reminder sweep), not a new cron.
+- **New lib:** `src/lib/rate-limit.ts` — `getClientIp()` (`x-forwarded-for` first entry, falls
+  back to `x-real-ip`, falls back to `'unknown'`), `checkRateLimit()`/`evaluateRateLimit()` (the
+  latter split out specifically so the verify script can exercise the RPC-call/fail-open logic
+  directly), `combineRateLimits()`, `rateLimitMessage()`.
+- **Verification:** `scripts/verify/15-rate-limiting.mjs` (19/19, new, committed) —
+  atomic-concurrency proof (40 simultaneous RPC calls against a limit of 20 landed at EXACTLY
+  20 allowed, cross-checked against the bucket row's own `count` column reading 40 — this is
+  precisely where a naive SELECT-then-UPDATE implementation would have undercounted, and
+  sequential testing could never have caught it), fixed-window-reset proof, fail-open proof (two
+  genuine Postgres errors forced and confirmed to reach the exact branch
+  `evaluateRateLimit()` checks — that branch's own allow-and-log behavior confirmed by direct
+  code inspection since `lib/rate-limit.ts` is TypeScript and not importable into this plain-Node
+  script), cron-cleanup proof (a seeded stale row is gone after a real call to
+  `/api/cron/send-reminders`), and a real-UI Playwright pass: normal invalid-code/invalid-token
+  error paths are unaffected by the new pre-checks, a single legitimate forgot-password
+  submission still succeeds, and — the enumeration-safety re-check — two different emails each
+  tripping their own per-email limit render byte-identical rate-limit messages. Full
+  `scripts/verify/14-rls-sweep.mjs` re-run 190/190, no regression. Independently confirmed via a
+  pure anon client that `rate_limit_buckets` is unreadable (`permission denied`, the stronger of
+  the two possible denials — same signature migration 017 established project-wide). `npm run
+  build` + `npm run lint` both clean throughout.
+- **Live IP-trust check against production (praxida.in):** the specific failure mode named going
+  in was a limiter that resolves every request to one shared/constant identifier, which would
+  lock out every user at once the moment real traffic arrived — this cannot be tested against a
+  local dev server (always `127.0.0.1`) and needed the real Vercel deployment. Performed
+  post-push; result recorded in `docs/DECISIONS.md`'s corresponding entry.
 
 ---
 
@@ -743,7 +807,7 @@ Closes every item on 14.1's own follow-up list, surfacing two more real findings
 6. **No DB constraint that a linked document belongs to the task's client** (`documents.client_id` vs `tasks.client_id`) — enforced only in `attachDocumentToTaskAction` and upload paths. A raw PostgREST write by a permitted user could link cross-client. **Not yet empirically re-probed in Ph14.1 — flagged for 14.1b.** Candidate for a trigger in the RLS pass.
 7. **Portal "assigned contact" not yet built** — must be a narrow SECURITY DEFINER RPC, *not* a widened profiles policy (client_users deliberately cannot enumerate staff).
 8. **Plan/seat/storage limits are not enforced anywhere yet.** DB helpers exist (`get_firm_plan`, `firm_has_feature`, `storage_used_bytes`) but no server action checks them.
-9. **No rate limiting / abuse controls** on public endpoints (signup, invite-code lookup, accept-invite, **forgot-password** — added 2026-07-18; it deliberately uses `admin.generateLink()` instead of the anon-key `resetPasswordForEmail()` so it can suppress Supabase's own email and send a branded one instead, which also means Supabase's own rate limit on that endpoint doesn't apply). Also worth noting operationally: Supabase's own signup-email rate limit was hit repeatedly during Ph5/Ph6 testing — real signups could hit this too under load; a bulk-testing workaround (admin API user creation) exists but isn't a production fix.
+9. ~~**No rate limiting / abuse controls** on public endpoints~~ **Fixed and applied 2026-07-24 (migration 019).** DB-backed (Vercel is serverless — an in-memory limiter would not survive between invocations), one generic fixed-window `rate_limit_buckets` table + atomic `check_rate_limit()` RPC (`INSERT ... ON CONFLICT DO UPDATE`, race-safe under concurrency — proved with 40 simultaneous callers landing at an exact count, not undercounted). Wired into every endpoint: `auth_signup` (20/hr/IP, both signup modes), `invite_code_lookup` (30/hr/IP, checked before the RPC so brute-force guesses never reach it), `forgot_password` (8/hr/email **and** 15/hr/IP — both checked unconditionally, preserving the endpoint's enumeration-safety property since the rate-limit outcome never correlates with account existence), `accept_invite_lookup` (20/hr/IP, shared between the page's own lookup and the accept action). Fails OPEN on the limiter's own DB error (logged loudly) — a limiter outage must not become a signup/reset outage. Cleanup folded into the existing `/api/cron/send-reminders` route, not a new cron. `scripts/verify/15-rate-limiting.mjs` (19/19): atomic concurrency proof, window-reset proof, fail-open proof (real Postgres errors reach the exact branch that fails open — the branch's own behavior confirmed by code inspection, `lib/rate-limit.ts` not importable into a plain Node script), cleanup-cron proof, and a real-UI Playwright pass (normal error paths unaffected, a legitimate under-limit user unaffected, enumeration-safety re-confirmed under actual rate-limiting conditions with two different emails). **`/login` is a deliberate, recorded exception** — see `docs/DECISIONS.md`. Also still worth noting operationally: Supabase's own signup-email rate limit was hit repeatedly during Ph5/Ph6 testing — a bulk-testing workaround (admin API user creation) exists but isn't a production fix.
 10. **Storage rollback is best-effort** — a crash mid-upload can orphan a storage object (no reconciliation job).
 11. ~~**[Ph14.1, F0, CRITICAL] `apply_receipts_to_invoice(p_invoice_id)` is a cross-tenant write primitive with zero ownership check.**~~ **Fixed and applied 2026-07-23 (migration 010).** SECURITY DEFINER, directly RPC-callable (not trigger-only), took an arbitrary invoice UUID, and its body checked nothing before UPDATE-ing `firm_invoices`. Empirically confirmed: a Firm B employee with zero billing permission called it against Firm A's invoice with no error, and the row's `updated_at` changed. Fix adds a `billing.manage` permission check and a firm-ownership check inside the function body, exempting `auth.role() = 'service_role'` (the function is also invoked internally by `handle_receipt_change()` on every receipts write). Proved in 4 directions via `scripts/verify/14-rls-sweep.mjs` — see §4.18.
 12. ~~**[Ph14.1, F1-RPC, HIGH] `get_firm_plan(p_firm_id)` leaks any firm's subscription plan/features cross-tenant, bypassing `billing.view`.**~~ **Fixed and applied 2026-07-23 (migration 011).** SECURITY DEFINER, arbitrary firm UUID, no ownership check, no REVOKE EXECUTE. Empirically confirmed with real returned data: an employee with `billing.view` revoked got her own firm's plan anyway; another firm's employee got a *different* firm's real plan data (code/price/features) by UUID; a client_user could do the same. Fix adds a `billing.view` check and a firm-ownership check inside the function body, exempting `is_super_admin()`/`service_role` from the ownership check only. Proved in 6 directions via `scripts/verify/14-rls-sweep.mjs` — see §4.19.
