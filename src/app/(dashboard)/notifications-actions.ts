@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import type { ActionResult } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 export async function markNotificationReadAction(
   notificationId: string
@@ -21,7 +22,7 @@ export async function markNotificationReadAction(
     .eq('user_id', user.id);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'notifications' }) };
   }
 
   return { success: true };
@@ -42,7 +43,7 @@ export async function markAllNotificationsReadAction(): Promise<ActionResult> {
     .eq('is_read', false);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'notifications' }) };
   }
 
   return { success: true };

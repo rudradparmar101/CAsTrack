@@ -159,10 +159,122 @@ async function sectionEmail() {
   );
 }
 
+async function sectionDbErrors() {
+  console.log('\nB. Postgres error mapping (L2)');
+  const { friendlyDbError } = await loadModule('src/lib/db-errors.ts', 'db-errors');
+
+  // Silence the module's own server-side logging for the duration — the fact
+  // that it logs is asserted separately below.
+  const realError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(' '));
+
+  try {
+    // The exact strings the audit found reaching the UI.
+    const checkConstraint = friendlyDbError({
+      code: '23514',
+      message: 'new row for relation "receipts" violates check constraint "receipts_amount_check"',
+    });
+    check(
+      'B1  CHECK violation no longer discloses the table or constraint name',
+      !checkConstraint.includes('receipts') && !checkConstraint.includes('constraint'),
+      `got: ${checkConstraint}`
+    );
+
+    const rlsInsert = friendlyDbError({
+      code: '42501',
+      message: 'new row violates row-level security policy for table "clients"',
+    });
+    check(
+      'B2  RLS INSERT denial no longer discloses the table or the policy',
+      !rlsInsert.includes('clients') && !rlsInsert.includes('row-level security'),
+      `got: ${rlsInsert}`
+    );
+
+    const rlsNoCode = friendlyDbError({
+      message: 'new row violates row-level security policy for table "tasks"',
+    });
+    check(
+      'B3  RLS denial WITHOUT a clean code is still caught (message fallback)',
+      !rlsNoCode.includes('tasks') && rlsNoCode.toLowerCase().includes('permission'),
+      `got: ${rlsNoCode}`
+    );
+
+    const unknown = friendlyDbError({
+      code: '42P01',
+      message: 'relation "firm_invoice_counters" does not exist',
+    });
+    check(
+      'B4  an UNMAPPED code falls through to the generic message (fails closed)',
+      !unknown.includes('firm_invoice_counters') && !unknown.includes('relation'),
+      `got: ${unknown}`
+    );
+
+    // --- the property that must NOT have been weakened -------------------
+    const zeroRow = friendlyDbError({ code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' });
+    check(
+      'B5  PGRST116 (zero-row write) still maps to a permission message — the loud-fail path',
+      zeroRow.toLowerCase().includes('permission'),
+      `got: ${zeroRow}`
+    );
+    const zeroRowCustom = friendlyDbError(
+      { code: 'PGRST116', message: 'multiple (or no) rows' },
+      { deniedMessage: 'You do not have permission to modify this task.' }
+    );
+    check(
+      'B6  a call site can still supply its own denied message (tasks keeps its wording)',
+      zeroRowCustom === 'You do not have permission to modify this task.'
+    );
+    const nullError = friendlyDbError(null, { deniedMessage: 'Document not found.' });
+    check(
+      'B7  a null error (row simply absent) still yields the call site\'s message, not a crash',
+      nullError === 'Document not found.'
+    );
+
+    // --- deliberate schema guard messages must still reach the user -------
+    const raised = friendlyDbError({
+      code: 'P0001',
+      message: 'You do not have permission to update this invoice\'s settlement',
+    });
+    check(
+      'B8  P0001 RAISE EXCEPTION text passes through verbatim (schema guard messages are written FOR users)',
+      raised === "You do not have permission to update this invoice's settlement",
+      `got: ${raised}`
+    );
+
+    // --- server-side detail is retained ----------------------------------
+    logged.length = 0;
+    friendlyDbError(
+      { code: '23514', message: 'violates check constraint "receipts_amount_check"', details: 'Failing row contains (...)' },
+      { context: 'recordReceipt' }
+    );
+    check(
+      'B9  the FULL original error is still logged server-side, with code + context',
+      logged.length === 1 &&
+        logged[0].includes('23514') &&
+        logged[0].includes('receipts_amount_check') &&
+        logged[0].includes('recordReceipt'),
+      `logged: ${logged[0] ?? '(nothing)'}`
+    );
+
+    const friendlyCodes = ['23505', '23503', '23502', '22P02', '22001'];
+    check(
+      'B10 the common constraint codes all produce non-generic, actionable wording',
+      friendlyCodes.every((c) => {
+        const msg = friendlyDbError({ code: c, message: `raw detail for ${c}` });
+        return !msg.includes('raw detail') && msg.length > 0;
+      })
+    );
+  } finally {
+    console.error = realError;
+  }
+}
+
 async function main() {
   console.log('\n17-app-hardening — pure-function proofs for the app-layer audit fixes');
   try {
     await sectionEmail();
+    await sectionDbErrors();
   } finally {
     rmSync(TMP, { recursive: true, force: true });
   }

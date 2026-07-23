@@ -10,6 +10,7 @@ import type {
   RolePermission,
   UserPermission,
 } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 /**
  * Per-employee permissions editor (Phase 13.3, migration 009). PARTNER-ONLY
@@ -38,17 +39,6 @@ async function requirePartner(): Promise<Guard> {
     return { ok: false, error: 'Only a partner can view or change permissions.' };
   }
   return { ok: true, supabase, userId, firmId: profile.firm_id };
-}
-
-/** PostgREST returns PGRST116 when a write matched no row — with RLS in
- *  play that means "you can see this row but cannot modify it" (same
- *  mapping as tasks/actions.ts's, billing/actions.ts's, udin/actions.ts's,
- *  and dsc/actions.ts's rlsFriendly()). */
-function rlsFriendly(message?: string): string {
-  if (!message || message.includes('0 rows') || message.includes('multiple (or no) rows')) {
-    return 'You do not have permission to make this change.';
-  }
-  return message;
 }
 
 /** Same-firm, role='employee' check — mirrors profile_in_my_firm(user_id,
@@ -145,7 +135,7 @@ export async function grantPermissionAction(employeeUserId: string, key: string)
         .single();
 
   if (error || !data) {
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { context: 'permissions' }) };
   }
 
   revalidatePath('/team');
@@ -182,7 +172,7 @@ export async function revokePermissionAction(employeeUserId: string, key: string
         .single();
 
   if (error || !data) {
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { context: 'permissions' }) };
   }
 
   revalidatePath('/team');
@@ -207,7 +197,7 @@ export async function resetPermissionToDefaultAction(employeeUserId: string, key
     .eq('permission_key', key);
 
   if (error) {
-    return { success: false, error: rlsFriendly(error.message) };
+    return { success: false, error: friendlyDbError(error, { context: 'permissions' }) };
   }
 
   revalidatePath('/team');

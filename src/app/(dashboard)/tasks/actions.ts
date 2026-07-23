@@ -22,6 +22,7 @@ import type {
   Profile,
   TaskStage,
 } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 /**
  * Task server actions for the CA schema (Phase 4).
@@ -61,14 +62,14 @@ function opt(value: FormDataEntryValue | null): string | null {
   return s === '' ? null : s;
 }
 
-/** PostgREST returns PGRST116 when an update matched no row — with RLS in
- *  play that means "you can see this task but cannot modify it". */
-function rlsFriendly(message?: string): string {
-  if (!message || message.includes('0 rows') || message.includes('multiple (or no) rows')) {
-    return 'You do not have permission to modify this task.';
-  }
-  return message;
-}
+/**
+ * What a task write reports when it matches zero rows. With RLS in play that
+ * means "you can see this task but cannot modify it" — the house-style
+ * `.select('id').single()` chain exists precisely so that case fails loudly
+ * instead of reporting a silent success (docs/DECISIONS.md, 2026-07-07).
+ * friendlyDbError() maps the error string; the loud-fail itself is unchanged.
+ */
+const TASK_DENIED = 'You do not have permission to modify this task.';
 
 function revalidateTaskViews(taskId?: string) {
   revalidatePath('/tasks');
@@ -98,7 +99,7 @@ export async function fetchMoreTasksAction(
   const { data, error } = await query.range(offset, offset + TASKS_PAGE_SIZE - 1);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'tasks' }) };
   }
   return { success: true, data: (data as unknown as FirmTaskWithRefs[]) || [] };
 }
@@ -201,7 +202,7 @@ export async function createTaskAction(formData: FormData): Promise<ActionResult
     .single();
 
   if (error || !task) {
-    return { success: false, error: error?.message || 'Failed to create the task.' };
+    return { success: false, error: friendlyDbError(error, { deniedMessage: 'Failed to create the task.', context: 'createTask' }) };
   }
 
   await logTaskActivity({
@@ -267,7 +268,7 @@ export async function updateTaskAction(formData: FormData): Promise<ActionResult
     .single();
 
   if (error || !updatedRow) {
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { deniedMessage: TASK_DENIED, context: 'tasks' }) };
   }
 
   const v = fields.values;
@@ -390,7 +391,7 @@ async function changeStageCore(
         error: `The database rejected this transition (${stageLabel(current)} → ${stageLabel(toStage)}).`,
       };
     }
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { deniedMessage: TASK_DENIED, context: 'tasks' }) };
   }
 
   // The stage-history row is written by the DB trigger; this feeds the
@@ -630,7 +631,7 @@ export async function updateTaskAssignmentAction(
     .single();
 
   if (error || !updatedRow) {
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { deniedMessage: TASK_DENIED, context: 'tasks' }) };
   }
 
   // Resolve names so the activity feed reads well without extra lookups.
@@ -709,7 +710,7 @@ export async function toggleTaskVisibilityAction(
     .single();
 
   if (error || !updated) {
-    return { success: false, error: error?.message || 'Task not found or access denied.' };
+    return { success: false, error: friendlyDbError(error, { deniedMessage: 'Task not found or access denied.', context: 'tasks' }) };
   }
 
   await logTaskActivity({
@@ -756,7 +757,7 @@ export async function toggleTaskChecklistItemAction(
     .single();
 
   if (error || !updatedRow) {
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { deniedMessage: TASK_DENIED, context: 'tasks' }) };
   }
 
   await logTaskActivity({
@@ -792,7 +793,7 @@ export async function deleteTaskAction(taskId: string): Promise<ActionResult> {
     .eq('firm_id', profile.firm_id);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'tasks' }) };
   }
 
   revalidateTaskViews();

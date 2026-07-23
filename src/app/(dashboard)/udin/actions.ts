@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getAuthProfile } from '@/lib/auth';
 import type { ActionResult } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 /**
  * UDIN register actions (Phase 12.5, migration 007). Writes are PARTNER-ONLY
@@ -24,16 +25,6 @@ async function requirePartner(): Promise<Guard> {
     return { ok: false, error: 'Only a partner can manage the UDIN register.' };
   }
   return { ok: true, supabase, userId, firmId: profile.firm_id };
-}
-
-/** PostgREST returns PGRST116 when a write matched no row — with RLS in
- *  play that means "you can see this row but cannot modify it" (same
- *  mapping as tasks/actions.ts's and billing/actions.ts's rlsFriendly()). */
-function rlsFriendly(message?: string): string {
-  if (!message || message.includes('0 rows') || message.includes('multiple (or no) rows')) {
-    return 'You do not have permission to make this change.';
-  }
-  return message;
 }
 
 interface UdinEntryInput {
@@ -94,7 +85,7 @@ export async function createUdinEntryAction(input: UdinEntryInput): Promise<Acti
     if (error?.code === '23514') {
       return { success: false, error: 'UDIN must be exactly 18 alphanumeric characters (as issued by ICAI).' };
     }
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { context: 'udin' }) };
   }
 
   revalidatePath('/udin');
@@ -135,7 +126,7 @@ export async function updateUdinEntryAction(input: UdinEntryInput): Promise<Acti
     if (error?.code === '23514') {
       return { success: false, error: 'UDIN must be exactly 18 alphanumeric characters (as issued by ICAI).' };
     }
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { context: 'udin' }) };
   }
 
   revalidatePath('/udin');

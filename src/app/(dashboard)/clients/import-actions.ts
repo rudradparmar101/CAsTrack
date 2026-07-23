@@ -5,6 +5,7 @@ import { parseCsv } from '@/lib/csv';
 import { requireClientsManage } from './actions';
 import { parseClientFields } from './client-validation';
 import type { ActionResultWithData } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 /**
  * Bulk client import (Phase 12.6) — a faster front-end to the SAME create
@@ -182,7 +183,7 @@ export async function commitClientImportAction(
       .single();
 
     if (error || !client) {
-      results.push({ rowNumber: row.rowNumber, name, status: 'invalid', error: error?.message || 'Failed to create client.' });
+      results.push({ rowNumber: row.rowNumber, name, status: 'invalid', error: friendlyDbError(error, { deniedMessage: 'Failed to create client.', context: 'clientImport' }) });
       continue;
     }
 

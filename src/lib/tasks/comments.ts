@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { getAuthProfile } from '@/lib/auth';
 import { logTaskActivity, notifyUsers } from '@/lib/tasks/activity';
 import type { ActionResult } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 /**
  * Task comment actions, shared by the staff task detail page and the client
@@ -48,7 +49,7 @@ export async function addTaskCommentAction(
   });
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'comments' }) };
   }
 
   // RLS-scoped read: resolves only if the commenter can see the task.
@@ -127,7 +128,7 @@ export async function updateTaskCommentAction(
     .eq('created_by', userId);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'comments' }) };
   }
 
   await logTaskActivity({
@@ -156,7 +157,7 @@ export async function deleteTaskCommentAction(
     .eq('created_by', userId);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'comments' }) };
   }
 
   await logTaskActivity({

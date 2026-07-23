@@ -5,6 +5,7 @@ import { getAuthProfile } from '@/lib/auth';
 import { sendEmail } from '@/lib/email/resend';
 import { invoiceIssuedEmail } from '@/lib/email/templates';
 import type { ActionResult, ActionResultWithData } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 /**
  * Billing actions for client invoices, receipts, and fee masters (Phase 12).
@@ -30,16 +31,6 @@ async function requireBillingManage(): Promise<Guard> {
     }
   }
   return { ok: true, supabase, userId, firmId: profile.firm_id };
-}
-
-/** PostgREST returns PGRST116 when a write matched no row — with RLS in
- *  play that means "you can see this row but cannot modify it" (same
- *  mapping as tasks/actions.ts's rlsFriendly()). */
-function rlsFriendly(message?: string): string {
-  if (!message || message.includes('0 rows') || message.includes('multiple (or no) rows')) {
-    return 'You do not have permission to make this change.';
-  }
-  return message;
 }
 
 interface DraftItemInput {
@@ -93,7 +84,7 @@ export async function createDraftInvoiceAction(input: {
     .single();
 
   if (invError || !invoice) {
-    return { success: false, error: invError?.message || 'Failed to create draft invoice.' };
+    return { success: false, error: friendlyDbError(invError, { deniedMessage: 'Failed to create draft invoice.', context: 'createDraftInvoice' }) };
   }
 
   const itemRows = input.items.map((item, idx) => ({
@@ -113,7 +104,7 @@ export async function createDraftInvoiceAction(input: {
     // Best-effort cleanup so a failed line-item insert doesn't leave an
     // empty draft behind (issue_firm_invoice would reject it anyway).
     await supabase.from('firm_invoices').delete().eq('id', invoice.id);
-    return { success: false, error: itemsError.message };
+    return { success: false, error: friendlyDbError(itemsError, { context: 'createDraftInvoice.items' }) };
   }
 
   revalidatePath('/billing');
@@ -131,7 +122,7 @@ export async function deleteDraftInvoiceAction(invoiceId: string): Promise<Actio
     .eq('id', invoiceId)
     .eq('firm_id', firmId); // RLS also requires status='draft'
 
-  if (error) return { success: false, error: error.message };
+  if (error) return { success: false, error: friendlyDbError(error, { context: 'billing' }) };
 
   revalidatePath('/billing');
   return { success: true };
@@ -143,7 +134,7 @@ export async function issueInvoiceAction(invoiceId: string): Promise<ActionResul
   const { supabase } = guard;
 
   const { error } = await supabase.rpc('issue_firm_invoice', { p_invoice_id: invoiceId });
-  if (error) return { success: false, error: error.message };
+  if (error) return { success: false, error: friendlyDbError(error, { context: 'billing' }) };
 
   // Best-effort email — never blocks the issue itself.
   const { data: invoice } = await supabase
@@ -194,7 +185,7 @@ export async function cancelInvoiceAction(invoiceId: string, reason: string): Pr
     .eq('id', invoiceId)
     .eq('firm_id', firmId);
 
-  if (error) return { success: false, error: error.message };
+  if (error) return { success: false, error: friendlyDbError(error, { context: 'billing' }) };
 
   revalidatePath('/billing');
   revalidatePath(`/billing/${invoiceId}`);
@@ -232,7 +223,7 @@ export async function recordReceiptAction(input: {
     created_by: userId,
   });
 
-  if (error) return { success: false, error: error.message };
+  if (error) return { success: false, error: friendlyDbError(error, { context: 'billing' }) };
 
   revalidatePath('/billing');
   revalidatePath(`/billing/${input.invoice_id}`);
@@ -293,7 +284,7 @@ export async function createFeeMasterAction(input: FeeMasterInput): Promise<Acti
           : 'The firm-wide rate card already has a rate for that service.',
       };
     }
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { context: 'billing' }) };
   }
 
   revalidatePath('/billing');
@@ -334,7 +325,7 @@ export async function updateFeeMasterAction(input: FeeMasterInput): Promise<Acti
           : 'The firm-wide rate card already has a rate for that service.',
       };
     }
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { context: 'billing' }) };
   }
 
   revalidatePath('/billing');
@@ -358,7 +349,7 @@ export async function toggleFeeMasterActiveAction(
     .single();
 
   if (error || !data) {
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { context: 'billing' }) };
   }
 
   revalidatePath('/billing');

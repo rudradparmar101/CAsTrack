@@ -4,6 +4,7 @@ import { getAuthProfile } from '@/lib/auth';
 import { createDocumentDownloadUrl } from '@/lib/documents/signed-url';
 import { PORTAL_TASKS_PAGE_SIZE, PORTAL_DOCUMENTS_PAGE_SIZE } from '@/lib/pagination';
 import type { ActionResultWithData, ClientDocumentWithDetails, FirmTask } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 
 /** Portal list pagination (Phase 11) — mirrors /tasks' fetchMoreTasksAction
@@ -33,7 +34,7 @@ export async function fetchMorePortalTasksAction(
     .order('due_date', { ascending: true })
     .range(offset, offset + PORTAL_TASKS_PAGE_SIZE - 1);
 
-  if (error) return { success: false, error: error.message };
+  if (error) return { success: false, error: friendlyDbError(error, { context: 'portal' }) };
   return { success: true, data: (data as FirmTask[]) || [] };
 }
 
@@ -52,7 +53,7 @@ export async function fetchMorePortalDocumentsAction(
     .order('created_at', { ascending: false })
     .range(offset, offset + PORTAL_DOCUMENTS_PAGE_SIZE - 1);
 
-  if (error) return { success: false, error: error.message };
+  if (error) return { success: false, error: friendlyDbError(error, { context: 'portal' }) };
 
   const docsWithUrls: ClientDocumentWithDetails[] = await Promise.all(
     ((data as ClientDocumentWithDetails[]) || []).map(async (doc) => ({

@@ -35,6 +35,7 @@ import type { ActionResult } from '@/lib/types';
 
 import { detectFileType } from './file-types';
 import { MAX_DOCUMENT_SIZE, formatMaxDocumentSize } from './limits';
+import { friendlyDbError } from '@/lib/db-errors';
 
 const DOCUMENTS_BUCKET = 'client-documents';
 
@@ -130,7 +131,7 @@ export async function uploadDocumentAction(
     .single();
 
   if (docError || !doc) {
-    return { success: false, error: docError?.message || 'Failed to create the document.' };
+    return { success: false, error: friendlyDbError(docError, { deniedMessage: 'Failed to create the document.', context: 'uploadDocument' }) };
   }
 
   // 2. Upload the physical file. Both the path extension and the stored
@@ -144,7 +145,7 @@ export async function uploadDocumentAction(
     // Roll back the document row ("uploaders can delete their own pending
     // documents" policy covers every role that got this far).
     await supabase.from('documents').delete().eq('id', doc.id);
-    return { success: false, error: uploadError.message };
+    return { success: false, error: friendlyDbError(uploadError, { deniedMessage: 'The file could not be stored. Please try again.', context: 'uploadDocument.storage' }) };
   }
 
   // 3. Record version 1.
@@ -162,7 +163,7 @@ export async function uploadDocumentAction(
   if (versionError) {
     await supabase.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
     await supabase.from('documents').delete().eq('id', doc.id);
-    return { success: false, error: versionError.message };
+    return { success: false, error: friendlyDbError(versionError, { context: 'uploadDocument.version' }) };
   }
 
   // Task-linked uploads feed the task's activity stream and ping the assignee.
@@ -245,7 +246,7 @@ export async function uploadDocumentVersionAction(
     .upload(filePath, file, { contentType: detected.contentType });
 
   if (uploadError) {
-    return { success: false, error: uploadError.message };
+    return { success: false, error: friendlyDbError(uploadError, { deniedMessage: 'The file could not be stored. Please try again.', context: 'uploadDocument.storage' }) };
   }
 
   const { error: versionError } = await supabase.from('document_versions').insert({
@@ -268,7 +269,7 @@ export async function uploadDocumentVersionAction(
         error: 'Someone else uploaded a version at the same time. Refresh and try again.',
       };
     }
-    return { success: false, error: versionError.message };
+    return { success: false, error: friendlyDbError(versionError, { context: 'uploadDocument.version' }) };
   }
 
   if (doc.task_id) {
@@ -314,7 +315,7 @@ export async function approveDocumentAction(documentId: string): Promise<ActionR
     .single();
 
   if (error || !updated) {
-    return { success: false, error: error?.message || 'Document not found.' };
+    return { success: false, error: friendlyDbError(error, { deniedMessage: 'Document not found.', context: 'documents' }) };
   }
 
   if (updated.task_id) {
@@ -380,7 +381,7 @@ export async function rejectDocumentAction(
     .single();
 
   if (error || !updated) {
-    return { success: false, error: error?.message || 'Document not found.' };
+    return { success: false, error: friendlyDbError(error, { deniedMessage: 'Document not found.', context: 'documents' }) };
   }
 
   if (updated.task_id) {
@@ -455,7 +456,7 @@ export async function attachDocumentToTaskAction(
     .eq('firm_id', profile.firm_id);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'documents' }) };
   }
 
   await logTaskActivity({

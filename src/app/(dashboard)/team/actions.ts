@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { getAuthProfile } from '@/lib/auth';
 import { MEMBERS_PAGE_SIZE } from '@/lib/pagination';
 import type { ActionResult, ActionResultWithData, Profile } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 /**
  * Mirrors requireClientsManage in clients/actions.ts. `team.view`/`team.manage`
@@ -64,7 +65,7 @@ export async function fetchMoreMembersAction(
     .range(offset, offset + MEMBERS_PAGE_SIZE - 1);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'team' }) };
   }
 
   return { success: true, data: (data as Profile[]) || [] };
@@ -91,7 +92,7 @@ export async function createDepartmentAction(formData: FormData): Promise<Action
     if (error.code === '23505') {
       return { success: false, error: 'A department with a matching name already exists' };
     }
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'team' }) };
   }
 
   revalidatePath('/team');
@@ -117,7 +118,7 @@ export async function updateDepartmentAction(formData: FormData): Promise<Action
     .eq('firm_id', firmId);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'team' }) };
   }
 
   revalidatePath('/team');
@@ -139,7 +140,7 @@ export async function toggleDepartmentActiveAction(
     .eq('firm_id', firmId);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'team' }) };
   }
 
   revalidatePath('/team');
@@ -185,7 +186,7 @@ export async function addDepartmentMemberAction(
     if (error.code === '23505') {
       return { success: false, error: 'User is already a member of this department' };
     }
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'team' }) };
   }
 
   revalidatePath('/team');
@@ -218,7 +219,7 @@ export async function removeDepartmentMemberAction(
     .eq('user_id', userId);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'team' }) };
   }
 
   revalidatePath('/team');
@@ -240,7 +241,7 @@ export async function regenerateInviteCodeAction(): Promise<ActionResult> {
     .eq('id', firmId);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'team' }) };
   }
 
   revalidatePath('/team');

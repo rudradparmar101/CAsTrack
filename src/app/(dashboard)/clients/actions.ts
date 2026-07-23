@@ -19,6 +19,7 @@ import type {
   ActionResultWithData,
   ClientWithCreator,
 } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 /**
  * Client CRUD for the CA schema.
@@ -251,7 +252,7 @@ export async function fetchMoreClientsAction(
     .range(offset, offset + CLIENTS_PAGE_SIZE - 1);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'clients' }) };
   }
 
   return { success: true, data: (data as ClientWithCreator[]) || [] };
@@ -278,7 +279,7 @@ export async function createClientAction(formData: FormData): Promise<ActionResu
     .single();
 
   if (error || !client) {
-    return { success: false, error: error?.message || 'Failed to create client.' };
+    return { success: false, error: friendlyDbError(error, { deniedMessage: 'Failed to create client.', context: 'createClient' }) };
   }
 
   // Children are validated above, so failures here are infra-level. The client
@@ -292,7 +293,7 @@ export async function createClientAction(formData: FormData): Promise<ActionResu
       revalidatePath('/clients');
       return {
         success: false,
-        error: `Client was created, but saving addresses failed (${addrError.message}). Open the client and edit to retry.`,
+        error: `Client was created, but saving addresses failed (${friendlyDbError(addrError, { context: 'createClient.addresses' })}) Open the client and edit to retry.`,
       };
     }
   }
@@ -305,7 +306,7 @@ export async function createClientAction(formData: FormData): Promise<ActionResu
       revalidatePath('/clients');
       return {
         success: false,
-        error: `Client was created, but saving authorized persons failed (${personError.message}). Open the client and edit to retry.`,
+        error: `Client was created, but saving authorized persons failed (${friendlyDbError(personError, { context: 'createClient.persons' })}) Open the client and edit to retry.`,
       };
     }
   }
@@ -318,7 +319,7 @@ export async function createClientAction(formData: FormData): Promise<ActionResu
       revalidatePath('/clients');
       return {
         success: false,
-        error: `Client was created, but saving registrations failed (${regError.message}). Open the client and edit to retry.`,
+        error: `Client was created, but saving registrations failed (${friendlyDbError(regError, { context: 'createClient.registrations' })}) Open the client and edit to retry.`,
       };
     }
   }
@@ -359,7 +360,7 @@ export async function updateClientAction(formData: FormData): Promise<ActionResu
   if (error || !updated) {
     return {
       success: false,
-      error: error?.message || 'Update was blocked — the client may no longer be visible to you.',
+      error: friendlyDbError(error, { deniedMessage: 'Update was blocked — the client may no longer be visible to you.', context: 'updateClient' }),
     };
   }
 
@@ -372,14 +373,14 @@ export async function updateClientAction(formData: FormData): Promise<ActionResu
     .eq('client_id', id)
     .eq('firm_id', firmId);
   if (addrDeleteError) {
-    return { success: false, error: `Failed to update addresses: ${addrDeleteError.message}` };
+    return { success: false, error: friendlyDbError(addrDeleteError, { deniedMessage: 'Failed to update addresses.', context: 'updateClient.addresses' }) };
   }
   if (addressesResult.addresses.length > 0) {
     const { error: addrError } = await supabase.from('client_addresses').insert(
       addressesResult.addresses.map((a) => ({ ...a, firm_id: firmId, client_id: id }))
     );
     if (addrError) {
-      return { success: false, error: `Failed to save addresses: ${addrError.message}` };
+      return { success: false, error: friendlyDbError(addrError, { deniedMessage: 'Failed to save addresses.', context: 'updateClient.addresses' }) };
     }
   }
 
@@ -389,14 +390,14 @@ export async function updateClientAction(formData: FormData): Promise<ActionResu
     .eq('client_id', id)
     .eq('firm_id', firmId);
   if (personDeleteError) {
-    return { success: false, error: `Failed to update authorized persons: ${personDeleteError.message}` };
+    return { success: false, error: friendlyDbError(personDeleteError, { deniedMessage: 'Failed to update authorized persons.', context: 'updateClient.persons' }) };
   }
   if (personsResult.persons.length > 0) {
     const { error: personError } = await supabase.from('client_authorized_persons').insert(
       personsResult.persons.map((p) => ({ ...p, firm_id: firmId, client_id: id }))
     );
     if (personError) {
-      return { success: false, error: `Failed to save authorized persons: ${personError.message}` };
+      return { success: false, error: friendlyDbError(personError, { deniedMessage: 'Failed to save authorized persons.', context: 'updateClient.persons' }) };
     }
   }
 
@@ -406,14 +407,14 @@ export async function updateClientAction(formData: FormData): Promise<ActionResu
     .eq('client_id', id)
     .eq('firm_id', firmId);
   if (regDeleteError) {
-    return { success: false, error: `Failed to update registrations: ${regDeleteError.message}` };
+    return { success: false, error: friendlyDbError(regDeleteError, { deniedMessage: 'Failed to update registrations.', context: 'updateClient.registrations' }) };
   }
   if (registrationsResult.registrations.length > 0) {
     const { error: regError } = await supabase.from('client_registrations').insert(
       registrationsResult.registrations.map((r) => ({ ...r, firm_id: firmId, client_id: id }))
     );
     if (regError) {
-      return { success: false, error: `Failed to save registrations: ${regError.message}` };
+      return { success: false, error: friendlyDbError(regError, { deniedMessage: 'Failed to save registrations.', context: 'updateClient.registrations' }) };
     }
   }
 
@@ -441,7 +442,7 @@ export async function setClientActiveAction(
     .eq('firm_id', firmId);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'clients' }) };
   }
 
   revalidatePath('/clients');

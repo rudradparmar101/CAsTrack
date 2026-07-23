@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getAuthProfile } from '@/lib/auth';
 import type { ActionResult, ChecklistItem } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 function parseChecklistItems(raw: string): ChecklistItem[] {
   return raw
@@ -64,7 +65,7 @@ export async function createTemplateAction(formData: FormData): Promise<ActionRe
   });
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'templates' }) };
   }
 
   revalidatePath('/templates');
@@ -102,7 +103,7 @@ export async function updateTemplateAction(formData: FormData): Promise<ActionRe
     .eq('firm_id', firmId);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'templates' }) };
   }
 
   revalidatePath('/templates');
@@ -121,7 +122,7 @@ export async function deleteTemplateAction(templateId: string): Promise<ActionRe
     .eq('firm_id', firmId);
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'templates' }) };
   }
 
   revalidatePath('/templates');

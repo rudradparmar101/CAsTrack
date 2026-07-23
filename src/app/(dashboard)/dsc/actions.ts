@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getAuthProfile } from '@/lib/auth';
 import type { ActionResult } from '@/lib/types';
+import { friendlyDbError } from '@/lib/db-errors';
 
 /**
  * DSC register actions (Phase 13.2, migration 008).
@@ -50,17 +51,6 @@ async function requireClientsView(): Promise<Guard> {
     }
   }
   return { ok: true, supabase, userId, firmId: profile.firm_id };
-}
-
-/** PostgREST returns PGRST116 when a write matched no row — with RLS in
- *  play that means "you can see this row but cannot modify it" (same
- *  mapping as tasks/actions.ts's, billing/actions.ts's, and udin/actions.ts's
- *  rlsFriendly()). */
-function rlsFriendly(message?: string): string {
-  if (!message || message.includes('0 rows') || message.includes('multiple (or no) rows')) {
-    return 'You do not have permission to make this change.';
-  }
-  return message;
 }
 
 interface DscEntryInput {
@@ -118,7 +108,7 @@ export async function createDscAction(input: DscEntryInput): Promise<ActionResul
     if (error?.code === '23505') {
       return { success: false, error: 'A DSC with this serial number from this issuing authority is already recorded.' };
     }
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { context: 'dsc' }) };
   }
 
   revalidatePath('/dsc');
@@ -158,7 +148,7 @@ export async function updateDscAction(input: DscEntryInput): Promise<ActionResul
     if (error?.code === '23505') {
       return { success: false, error: 'A DSC with this serial number from this issuing authority is already recorded.' };
     }
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { context: 'dsc' }) };
   }
 
   revalidatePath('/dsc');
@@ -179,7 +169,7 @@ export async function toggleDscActiveAction(id: string, isActive: boolean): Prom
     .single();
 
   if (error || !data) {
-    return { success: false, error: rlsFriendly(error?.message) };
+    return { success: false, error: friendlyDbError(error, { context: 'dsc' }) };
   }
 
   revalidatePath('/dsc');
@@ -208,7 +198,7 @@ export async function recordDscMovementAction(
     // The RPC's own RAISE EXCEPTION messages are already written to be
     // user-facing (same convention as the DB trigger's stage-transition
     // errors surfaced through task-stage-panel.tsx).
-    return { success: false, error: error.message };
+    return { success: false, error: friendlyDbError(error, { context: 'dsc' }) };
   }
 
   revalidatePath('/dsc');
