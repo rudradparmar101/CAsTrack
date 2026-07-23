@@ -2,7 +2,53 @@
  * Shared HTML email layout (Phase 11). Inline styles only — email clients
  * don't load external CSS. Colors are the light-mode design tokens from
  * globals.css (an email has no dark-mode toggle to react to).
+ *
+ * EVERY user-controlled value interpolated into these templates MUST go
+ * through esc() (app-layer security audit, finding M2). Until this change
+ * every interpolation was raw, and the values are all user-controlled:
+ * taskTitle (any staff with tasks.create), clientName/firmName (clients.manage
+ * / signup / firm settings), holderName, rejection reasons, comment text,
+ * document names. Those reach the CLIENT's inbox via the reminder, nag,
+ * invoice, and portal-invite templates.
+ *
+ * The risk is not classic XSS — mail clients strip <script>. It is HTML and
+ * link injection into a trusted channel: a task titled
+ *   </strong></p><a href="https://evil.example/gst-portal">Verify now</a><p>
+ * renders a working phishing link inside a legitimate, DKIM-signed email from
+ * the firm's own verified domain, in the firm's branding, addressed to that
+ * firm's client. For a product whose whole subject is statutory portal
+ * deadlines, that is a worse outcome than script execution would be.
  */
+
+/**
+ * HTML-escape a value for interpolation into any of the templates below.
+ * Escapes the five characters that can break out of text content or an
+ * attribute value. Non-string inputs stringify first so a number or null can
+ * never slip through unescaped.
+ */
+function esc(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Escape a URL destined for an href, and refuse any scheme that could execute.
+ * Every ctaUrl today is app-constructed (siteUrl + a fixed path), so this is
+ * not closing a live hole — it is making sure a future call site that passes
+ * user data here cannot turn the CTA button into a javascript: or data: link.
+ * An unusable URL degrades to '#' rather than rendering a dangerous one.
+ */
+function escUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return '#';
+  return esc(trimmed);
+}
+
 function layout(params: {
   preheader?: string;
   heading: string;
@@ -11,7 +57,16 @@ function layout(params: {
   ctaLabel?: string;
   firmName?: string;
 }): string {
-  const { preheader, heading, bodyHtml, ctaUrl, ctaLabel, firmName } = params;
+  // `bodyHtml` is the ONE parameter deliberately not escaped here: it is
+  // template-authored markup assembled by the functions below, each of which
+  // escapes its own user-controlled values before embedding them. Never pass
+  // caller-supplied text straight into bodyHtml.
+  const { bodyHtml } = params;
+  const preheader = params.preheader ? esc(params.preheader) : undefined;
+  const heading = esc(params.heading);
+  const ctaUrl = escUrl(params.ctaUrl);
+  const ctaLabel = params.ctaLabel ? esc(params.ctaLabel) : undefined;
+  const firmName = params.firmName ? esc(params.firmName) : undefined;
   return `<!doctype html>
 <html>
   <body style="margin:0;padding:0;background-color:#f7f8fa;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
@@ -61,7 +116,7 @@ export function notificationEmail(params: {
 }): string {
   return layout({
     heading: params.title,
-    bodyHtml: `<p style="margin:0;">${params.message}</p>`,
+    bodyHtml: `<p style="margin:0;">${esc(params.message)}</p>`,
     ctaUrl: params.ctaUrl,
     ctaLabel: 'Open in Praxida',
     firmName: params.firmName,
@@ -77,7 +132,7 @@ export function portalInviteEmail(params: {
     preheader: `${params.firmName} invited you to their client portal`,
     heading: `You're invited to ${params.firmName}'s client portal`,
     bodyHtml: `<p style="margin:0 0 12px;">Hello,</p>
-      <p style="margin:0 0 12px;">${params.firmName} has set up portal access for <strong>${params.clientName}</strong>. Use the button below to accept the invitation and sign in — you'll be able to track your compliance tasks, exchange documents, and message your CA firm directly.</p>
+      <p style="margin:0 0 12px;">${esc(params.firmName)} has set up portal access for <strong>${esc(params.clientName)}</strong>. Use the button below to accept the invitation and sign in — you'll be able to track your compliance tasks, exchange documents, and message your CA firm directly.</p>
       <p style="margin:0;color:#9aa0ac;font-size:13px;">This invite link is personal — please don't forward it.</p>`,
     ctaUrl: params.inviteUrl,
     ctaLabel: 'Accept invitation',
@@ -98,8 +153,8 @@ export function statutoryReminderEmail(params: {
   return layout({
     preheader: `${params.taskTitle} is ${dueText}`,
     heading: `Reminder: ${params.taskTitle} is ${dueText}`,
-    bodyHtml: `<p style="margin:0 0 12px;">Hello ${params.clientName},</p>
-      <p style="margin:0 0 12px;">This is a reminder that <strong>${params.taskTitle}</strong>${params.periodLabel ? ` (${params.periodLabel})` : ''} is due on <strong>${params.dueDate}</strong>. Please share any pending documents or information with ${params.firmName} at the earliest.</p>`,
+    bodyHtml: `<p style="margin:0 0 12px;">Hello ${esc(params.clientName)},</p>
+      <p style="margin:0 0 12px;">This is a reminder that <strong>${esc(params.taskTitle)}</strong>${params.periodLabel ? ` (${esc(params.periodLabel)})` : ''} is due on <strong>${esc(params.dueDate)}</strong>. Please share any pending documents or information with ${esc(params.firmName)} at the earliest.</p>`,
     ctaUrl: params.portalUrl,
     ctaLabel: 'View in client portal',
     firmName: params.firmName,
@@ -122,8 +177,8 @@ export function invoiceIssuedEmail(params: {
   return layout({
     preheader: `Invoice ${params.invoiceNumber} for ${amountText}`,
     heading: `New invoice from ${params.firmName}`,
-    bodyHtml: `<p style="margin:0 0 12px;">Hello ${params.clientName},</p>
-      <p style="margin:0 0 12px;">${params.firmName} has issued invoice <strong>${params.invoiceNumber}</strong> for <strong>${amountText}</strong>${params.dueDate ? `, due on <strong>${params.dueDate}</strong>` : ''}. You can view the full invoice in your client portal.</p>`,
+    bodyHtml: `<p style="margin:0 0 12px;">Hello ${esc(params.clientName)},</p>
+      <p style="margin:0 0 12px;">${esc(params.firmName)} has issued invoice <strong>${esc(params.invoiceNumber)}</strong> for <strong>${esc(amountText)}</strong>${params.dueDate ? `, due on <strong>${esc(params.dueDate)}</strong>` : ''}. You can view the full invoice in your client portal.</p>`,
     ctaUrl: params.portalUrl,
     ctaLabel: 'View invoice in client portal',
     firmName: params.firmName,
@@ -155,7 +210,7 @@ export function dscExpiryAlertEmail(params: {
   return layout({
     preheader: `${params.holderName}'s DSC ${expiryText}`,
     heading: `DSC ${expiryText}: ${params.holderName}`,
-    bodyHtml: `<p style="margin:0 0 12px;">A digital signature token held for <strong>${params.clientName}</strong> (holder: <strong>${params.holderName}</strong>) ${expiryText}, on <strong>${params.expiresOn}</strong>.</p>
+    bodyHtml: `<p style="margin:0 0 12px;">A digital signature token held for <strong>${esc(params.clientName)}</strong> (holder: <strong>${esc(params.holderName)}</strong>) ${esc(expiryText)}, on <strong>${esc(params.expiresOn)}</strong>.</p>
       <p style="margin:0;">Renewing in advance avoids a filing being blocked mid-season.</p>`,
     ctaUrl: params.dscUrl,
     ctaLabel: 'View DSC register',
@@ -173,8 +228,8 @@ export function waitingClientNagEmail(params: {
   return layout({
     preheader: `${params.firmName} is still waiting on you for ${params.taskTitle}`,
     heading: `Action needed: ${params.taskTitle}`,
-    bodyHtml: `<p style="margin:0 0 12px;">Hello ${params.clientName},</p>
-      <p style="margin:0 0 12px;">${params.firmName} has been waiting on you for <strong>${params.taskTitle}</strong> for ${params.daysWaiting} day${params.daysWaiting === 1 ? '' : 's'}. Please check the task for what's needed so work can continue.</p>`,
+    bodyHtml: `<p style="margin:0 0 12px;">Hello ${esc(params.clientName)},</p>
+      <p style="margin:0 0 12px;">${esc(params.firmName)} has been waiting on you for <strong>${esc(params.taskTitle)}</strong> for ${esc(params.daysWaiting)} day${params.daysWaiting === 1 ? '' : 's'}. Please check the task for what's needed so work can continue.</p>`,
     ctaUrl: params.portalUrl,
     ctaLabel: 'View in client portal',
     firmName: params.firmName,
