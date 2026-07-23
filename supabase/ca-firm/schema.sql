@@ -1439,9 +1439,28 @@ CREATE TRIGGER log_receipt_mutation
 -- by-trigger precedent as the document-version counters (9.5). Settlement
 -- counts amount + TDS actually deducted (u/s 194J): a 90%-cash + 10%-TDS
 -- receipt fully settles the invoice.
+-- Migration 010 (F0 fix): SECURITY DEFINER bypasses RLS entirely, so this
+-- body is the only security boundary. Ownership + billing.manage are
+-- enforced for any non-service_role caller; service_role is exempt because
+-- handle_receipt_change() invokes this on every receipts write, including
+-- service-role-driven ones (verify scripts, future backfills) that have no
+-- JWT and thus no auth.uid() to check against.
 CREATE OR REPLACE FUNCTION public.apply_receipts_to_invoice(p_invoice_id UUID)
 RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
+  IF auth.role() <> 'service_role' THEN
+    IF NOT public.has_permission('billing.manage') THEN
+      RAISE EXCEPTION 'You do not have permission to update this invoice''s settlement';
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM public.firm_invoices
+      WHERE id = p_invoice_id AND firm_id = public.get_user_firm_id()
+    ) THEN
+      RAISE EXCEPTION 'Invoice not found in your firm';
+    END IF;
+  END IF;
+
   UPDATE public.firm_invoices i
   SET amount_received = r.amt,
       tds_received    = r.tds,

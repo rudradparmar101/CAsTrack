@@ -2,13 +2,10 @@
 -- Migration 010 — Phase 14.2, finding F0 (CRITICAL): close the
 -- apply_receipts_to_invoice() cross-tenant write primitive
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- ⚠ NOT YET APPLIED — drafted for Jay's review in Supabase Studio. Do not
--- apply via MCP or any automated path; this is a manual-apply-only gate,
--- same as every migration before it (001–009). Per the migration convention
--- added 2026-07-23 (project_context.md header block / docs/DECISIONS.md):
--- once applied and confirmed, THIS FILE'S OWN HEADER must be updated to
--- APPLIED <date> in the same session that folds it into schema.sql — that
--- update must not be deferred to a later session.
+-- ✅ APPLIED 2026-07-23 — confirmed clean in Supabase Studio by Jay; pg_proc
+-- inspection confirms the new guard is live in the deployed function body.
+-- Folded into schema.sql in the same session per the migration convention
+-- added 2026-07-23 (project_context.md header block / docs/DECISIONS.md).
 --
 -- Found by: docs/verification/phase-14-rls-sweep.md, finding F0 —
 -- scripts/verify/14-rls-sweep.mjs, check #112. `apply_receipts_to_invoice

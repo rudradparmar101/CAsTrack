@@ -1007,21 +1007,54 @@ async function main() {
     R('can_access_document(): EVB (Firm B) resolves false for FIRM A\'s document (cross-firm)', !error && data === false, error?.message || `got: ${data}`);
   }
   {
-    // FINDING-CHECK: apply_receipts_to_invoice(p_invoice_id) is SECURITY
+    // F0 FIX PROBE (migration 010): apply_receipts_to_invoice() is SECURITY
     // DEFINER, RETURNS VOID (not a trigger-only type — directly RPC-callable),
-    // takes an ARBITRARY invoice_id, and its body has NO firm/ownership/
-    // permission check of any kind before UPDATing firm_invoices. It's meant
-    // to be called only from the on_receipt_change trigger, but nothing
-    // stops a direct RPC call. EVB (Firm B, no billing permission at all)
-    // calls it against Firm A's invoiceA.
-    const { data: before } = await admin.from('firm_invoices').select('updated_at, amount_received').eq('id', ID.invoiceA).single();
-    const { error } = await evb.rpc('apply_receipts_to_invoice', { p_invoice_id: ID.invoiceA });
-    const { data: after } = await admin.from('firm_invoices').select('updated_at, amount_received').eq('id', ID.invoiceA).single();
-    const detail = error
-      ? `RPC denied: ${error.message} (would mean the gap is closed)`
-      : `RPC call itself SUCCEEDED with no ownership check (before.updated_at=${before?.updated_at}, after.updated_at=${after?.updated_at})`;
-    R('FINDING-CHECK apply_receipts_to_invoice(): EVB (Firm B, zero billing permission) can CALL this RPC against Firm A\'s invoice with no error — no firm/ownership check inside the function at all',
-      !error, detail);
+    // and now carries two independent guards inside its body — a billing.manage
+    // permission check and a firm-ownership check on p_invoice_id — with an
+    // explicit auth.role() = 'service_role' exemption for the internal
+    // handle_receipt_change() trigger path. Four cases prove all of it, not
+    // just the headline cross-firm case: the two guards fire independently,
+    // the legitimate path still works, and the service_role bypass didn't
+    // silently break the trigger it exists for.
+
+    // 1. Cross-firm: EVB (Firm B, zero billing permission) against Firm A's
+    // invoiceA — must be rejected. Fails BOTH guards; either alone would stop
+    // it, but this is the original F0 scenario so it's the headline case.
+    {
+      const { error } = await evb.rpc('apply_receipts_to_invoice', { p_invoice_id: ID.invoiceA });
+      R('F0 fix: EVB (Firm B, zero billing permission) is REJECTED calling apply_receipts_to_invoice() against Firm A\'s invoice',
+        !!error, error ? `denied: ${error.message}` : 'RPC call SUCCEEDED — cross-tenant write primitive still open');
+    }
+
+    // 2. Same-firm, WITH billing.manage: EP (Firm A, every permission granted)
+    // against Firm A's own invoiceA — must succeed (no regression on the
+    // legitimate path).
+    {
+      const { error } = await ep.rpc('apply_receipts_to_invoice', { p_invoice_id: ID.invoiceA });
+      R('F0 fix: EP (Firm A, billing.manage) SUCCEEDS calling apply_receipts_to_invoice() against Firm A\'s own invoice (no regression)',
+        !error, error ? `unexpectedly denied: ${error.message}` : 'succeeded as expected');
+    }
+
+    // 3. Same-firm, WITHOUT billing.manage: E0 (Firm A, every permission
+    // revoked) against Firm A's own invoiceA — must be rejected. Proves the
+    // permission guard fires on its own, independent of the ownership check
+    // (E0 owns the firm relationship but still lacks billing.manage).
+    {
+      const { error } = await e0.rpc('apply_receipts_to_invoice', { p_invoice_id: ID.invoiceA });
+      R('F0 fix: E0 (Firm A, no billing.manage) is REJECTED calling apply_receipts_to_invoice() against Firm A\'s own invoice (permission guard, independent of ownership)',
+        !!error, error ? `denied: ${error.message}` : 'RPC call SUCCEEDED with no billing.manage — permission guard not enforced');
+    }
+
+    // 4. service_role path: the on_receipt_change trigger calls this function
+    // internally on every receipts write, including service-role-driven ones,
+    // and has no JWT/auth.uid() to check — that's the whole reason for the
+    // auth.role() = 'service_role' exemption. Call it directly as service_role
+    // to prove the exemption didn't get lost and the trigger path still works.
+    {
+      const { error } = await admin.rpc('apply_receipts_to_invoice', { p_invoice_id: ID.invoiceA });
+      R('F0 fix: service_role call to apply_receipts_to_invoice() still SUCCEEDS (exemption intact — this is what handle_receipt_change() relies on)',
+        !error, error ? `unexpectedly denied: ${error.message}` : 'succeeded as expected');
+    }
   }
   {
     // profile_in_my_firm(): PA (Firm A) probing PB's (Firm B partner) id —
