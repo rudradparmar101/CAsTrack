@@ -789,6 +789,34 @@ new-version upload) succeed end to end; and a no-access employee is denied *writ
 another document's folder — the INSERT-side fix proven directly. 126/126 sweep checks pass.
 **Status:** resolved and shipped, committed separately (`fe4b219`). F3 through F5 remain open.
 
+### 2026-07-23 — Phase 14.2, F3 fixed and applied: block partner-on-partner profile deletion
+**Decision:** the `profiles` DELETE policy's target-role gap is closed by blocking
+partner-on-partner removal entirely (`AND role <> 'partner'` in the `USING` clause), not by
+routing it through a narrower confirmation mechanism — the second option the sweep doc
+offered. Applied cleanly in Studio, folded into `schema.sql`, migration 013's header updated
+to `✅ APPLIED 2026-07-23`.
+**Rationale:** mirrors the line migration 009 already drew for `user_permissions` (scoped to
+`role = 'employee'` targets only, never a partner). A partner unilaterally removing a
+co-partner's entire staff access with a single DELETE call, no consent or notification path,
+is a governance-sensitive action for the product's ownership tier — if this is ever genuinely
+needed, it should be a manual/support-assisted action outside the app, not an in-app one.
+**A fourth case, not in the original plan, investigated rather than assumed:** the exclusion
+is negative (`role <> 'partner'`), so a `client_user` target remains deletable. Checked whether
+this is a gap that should instead become a positive `role = 'employee'`-only scope (matching
+009's shape) — concluded no: no code in `src/` deletes any `profiles` row of any role today
+(this policy is dormant at the app layer), there is no dedicated "revoke portal access" UI, and
+a `client_user` carries none of the governance weight a co-partner does (no elevated privilege
+to lose, still firm-scoped). Recorded as **intended**, not a gap requiring a follow-up
+migration.
+**Proof, not policy-reading:** `scripts/verify/14-rls-sweep.mjs` gained 4 cases, all passing:
+partner-on-partner denied (the fix); partner removing an employee still succeeds (no
+regression); self-deletion stays blocked (the pre-existing guard, untouched); and partner
+removing a client_user still succeeds (the investigated case above, proven empirically with a
+dedicated throwaway seed user rather than reusing UA1/UA2, which stay alive for the rest of the
+run). 127/127 sweep checks pass.
+**Status:** resolved and shipped, committed separately (`7952076`). F4 (architectural — Jay's
+call, not yet made) and F5 remain open.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)

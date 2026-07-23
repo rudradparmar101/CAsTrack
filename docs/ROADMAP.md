@@ -331,9 +331,21 @@ confirmed by Jay before any further work.
       and a no-access employee is denied writing into another document's folder — the
       INSERT-side fix proven directly). 126/126 sweep checks pass. Committed separately
       (`fe4b219`).
-- [ ] F3 (medium): add a target-role exclusion to the `profiles` DELETE policy so a partner
-      cannot remove a co-partner — needs Jay's call on whether partner-on-partner removal
-      should ever be possible at all.
+- [x] F3 (medium): **fixed and applied 2026-07-23** — Jay's call: block partner-on-partner
+      removal entirely, not allow it via a narrower confirmation mechanism. Migration 013
+      adds `AND role <> 'partner'` directly to the `profiles` DELETE policy's `USING` clause
+      (the row being deleted's own `role` column is the target's role — no subquery needed).
+      Mirrors the line migration 009 already drew for `user_permissions` (scoped to
+      `role = 'employee'` targets only). Applied cleanly in Studio, folded into `schema.sql`,
+      migration header updated to APPLIED. Proved via 4 cases in
+      `scripts/verify/14-rls-sweep.mjs` — partner-on-partner denied (the fix), partner
+      removing an employee still succeeds (no regression), self-deletion stays blocked
+      (untouched by this migration), and a partner removing a client_user still succeeds,
+      established empirically and recorded as **INTENDED** (the exclusion is negative —
+      `role <> 'partner'` — so a client_user target remains permitted; this is the
+      lowest-risk of the three targets and today the only path, even in principle, to ever
+      revoke a client's portal login, since no dedicated "revoke portal access" UI exists
+      yet). 127/127 sweep checks pass. Committed separately (`7952076`).
 - [ ] F4 (medium, architectural decision): decide whether tasks.assign gets a real, separate
       RLS check for reassignment, or formally accept that tasks.update_department implies it.
 - [ ] F5 (low, architectural decision): decide whether task-less documents should be
