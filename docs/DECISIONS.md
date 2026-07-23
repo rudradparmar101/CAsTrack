@@ -976,6 +976,51 @@ RLS staying exactly as broad as it is today.
 forward; the systemic audit above is the one-time backward-looking sweep this rule's own
 adoption required.
 
+### 2026-07-23 — Phase 14.2 CLOSE-OUT: migration 017 applied, all remaining scope resolved
+**Decision:** one consolidated migration (017) closes every item left open in Phase 14.2:
+`enforce_task_assignment_permission()` upgraded to `SECURITY DEFINER` (consistency, not an
+exploit fix — see the standing-rule entry above for why this wasn't a live gap), and a
+schema-wide default-privileges hardening that turned out to be far larger in scope than the
+single `client_outstanding` gap originally tracked. Applied cleanly in Studio, folded into
+`schema.sql` (new §13, plus §9.8 which adds `rls_auto_enable()`/`ensure_rls` to the greenfield
+source of truth for the first time — they existed live but were never in `schema.sql` before).
+**Rationale — the default-privileges audit's real scope:** `information_schema.role_table_grants`
+showed EVERY table and view in `public`, not just `client_outstanding`, carrying full grants
+(`DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE`) to both `anon` and
+`authenticated`. `pg_default_acl` confirmed this is Supabase's own project-level default ACL,
+not anything this project's migrations added. Confirmed empirically NOT exploitable — zero RLS
+policies anywhere target `anon`/`PUBLIC`, and a pure anon-key client with no session got zero
+rows / an RLS-violation error against every table tested. One latent (not PostgREST-reachable)
+risk flagged: `TRUNCATE` bypasses RLS entirely in Postgres, so revoking it from
+`authenticated`/`anon` — which never need it — is cheap defense-in-depth. Fixed via one blanket
+revoke on existing objects plus an extension of the *existing* `rls_auto_enable()` event
+trigger (reusing established automation rather than adding `ALTER DEFAULT PRIVILEGES` calls
+whose success across multiple roles couldn't be fully verified via read-only MCP access).
+**Full re-verification, not just new-check coverage, per explicit instruction:** re-ran the
+complete migrations 014/015/016 probe set after the `SECURITY DEFINER` upgrade — a genuine
+behavior change worth re-checking (as `INVOKER` the function's internal lookups ran under the
+caller's own RLS; as `DEFINER` they now see all rows unconditionally) — all 11 cases still
+pass. Proved the unauthenticated path end to end with real anon-key/service-role calls: both
+pre-auth RPCs (`lookup_firm_by_invite_code`, `lookup_client_invitation`) still work for a pure
+anon client; real sign-in still succeeds; the app's actual forgot-password mechanism
+(`admin.generateLink()`, confirmed by reading the real action code, not `resetPasswordForEmail()`)
+still works; service-role-driven provisioning (mimicking `/auth/callback`) still works.
+`scripts/verify/14-rls-sweep.mjs` gained 8 new permanent checks (anon denied at the grant layer
+on reads/writes, legitimate anon RPCs and sign-in unaffected) — 148/148 sweep checks pass.
+**One verification deliberately left to Jay:** confirming `rls_auto_enable()` fires correctly
+on a genuinely new table requires `CREATE TABLE`/`DROP TABLE` — DDL, which the standing
+guardrail reserves for Studio, never MCP, even for a throwaway test. Confirmed instead via
+direct `pg_proc`/`pg_trigger` inspection that the function and event trigger match the
+migration's intended definition exactly; a short SQL snippet was handed to Jay to close that
+one remaining check himself.
+**Also closed in the same session (Part A, docs-only, no migration):** two MORE stale migration
+headers beyond the one (008) originally flagged — migrations 004 and 005 also still said "NOT
+YET APPLIED" despite Phase 12 having shipped and been exercised for many phases since.
+**Status:** resolved and shipped, committed separately (`26f650b`). **This closes Phase 14.2
+in full** — every item from the original 7 findings through this systemic audit is now applied
+and probed. See `docs/ROADMAP.md` for 14.1b (unprobed tables, not started) and 14.3 (already
+resolved earlier this engagement).
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)

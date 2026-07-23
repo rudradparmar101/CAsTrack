@@ -291,7 +291,17 @@ confirmed by Jay before any further work.
       super-admin positive-path check; `lookup_client_invitation()`; the doc↔task
       client-consistency probe.
 
-### Phase 14.2 — Fix session for 14.1's findings [ ] ⚠ migration gate
+### Phase 14.2 — Fix session for 14.1's findings [x] COMPLETE (2026-07-23)
+**All 7 of Phase 14.1's original findings (F0–F5, plus the migration-006 documentation item)
+are resolved, along with two follow-up data-integrity gaps found while fixing F4 and the
+systemic SECURITY DEFINER + default-privileges audit that closed out this phase's remaining
+scope.** Migrations 010–017 applied, each its own Studio gate, each probed empirically before
+moving on, each committed separately. `scripts/verify/14-rls-sweep.mjs` grew from 116 → 148
+checks, all green. One item remains as a Jay-run manual verification (not a code/doc gap): a
+throwaway-table live-fire test of the extended `rls_auto_enable()` event trigger, since creating
+a table is DDL and the standing guardrail reserves that for Studio, not MCP. See
+`project_context.md` §4.24 for the full close-out writeup and the exact SQL Jay can run to
+close that last verification.
 - [x] F0 (critical): **fixed and applied 2026-07-23** — migration 010 adds a `billing.manage`
       permission check and a firm-ownership check on `p_invoice_id` inside
       `apply_receipts_to_invoice()`'s body, exempting `auth.role() = 'service_role'` so
@@ -406,7 +416,7 @@ confirmed by Jay before any further work.
 - [ ] guard_firm_invoice frozen-column list omits status / amount_received / tds_received — a
       caller that bypasses RLS can corrupt settlement state; needs the session-variable
       pattern to allow only apply_receipts_to_invoice() (ties into F0's fix).
-- [ ] Supabase default privileges grant authenticated full DML on new public objects; PUBLIC != authenticated. Every CREATE VIEW and CREATE TABLE must explicitly REVOKE from authenticated, or rely on RLS. Audit all objects for this class of bug — 004's client views were the first instance (fixed in migration 005 for client_invoices/client_invoice_items/client_outstanding; other objects not yet audited). **Widened 2026-07-23 (migration-006 reconciliation):** also audit `anon`, not just `authenticated` — `client_outstanding` was found to retain un-revoked `anon` INSERT/UPDATE/DELETE grants (neither migration 005 nor 006's REVOKE ever targeted `anon`, only `authenticated`); low risk in practice (`security_invoker` + RLS default-deny) but a one-line REVOKE closes it. See `docs/verification/migration-006-reconciliation.md`.
+- [x] Supabase default privileges grant authenticated full DML on new public objects; PUBLIC != authenticated. **Resolved 2026-07-23 (migration 017, Phase 14.2's systemic audit).** The full audit (via `information_schema.role_table_grants`, not assumption) found this was far broader than `client_outstanding` alone — EVERY table and view in `public` carried full grants (`DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE`) to both `anon` and `authenticated`, inherited from Supabase's own project-level default ACL (confirmed via `pg_default_acl`), not anything this project's own migrations added. Confirmed empirically NOT exploitable — zero RLS policies target `anon`/`PUBLIC` anywhere, and a pure anon-key client with no session got zero rows / an explicit permission-denied error against every table tested. One latent (if not PostgREST-reachable) risk flagged: `TRUNCATE` isn't filtered by RLS at all. Migration 017 revoked `anon`'s grants and `authenticated`'s `TRUNCATE`/`TRIGGER`/`REFERENCES` on every existing table/view in one statement each, and extended the existing `rls_auto_enable()` event trigger so future tables get the same treatment automatically. Proved via 8 new permanent checks in `scripts/verify/14-rls-sweep.mjs` (a real, no-session anon client denied at the grant layer on reads/writes, while the two legitimate anon-callable RPCs and real sign-in still work) plus a full unauthenticated-path regression proof (signup/login/forgot-password/accept-invite/employee-join-by-code all verified against the live DB with real anon-key and service-role calls). 148/148 sweep checks pass. Committed separately (`26f650b`).
 - [ ] firms ON DELETE CASCADE to firm_invoices is blocked by guard_firm_invoice_no_delete when any invoice is non-draft, so a firm with issued invoices cannot be hard-deleted through any path. This is desirable (statutory retention) but must be resolved deliberately: adopt firm soft-delete (mirroring the F6 client soft-delete pattern) as part of tenant lifecycle / Phase 15, so hard-delete and this cascade never occur. Until then, firm hard-deletion is effectively disabled for billing-active firms.
 
 ### Phase 14.3 — migration 006 reconciliation [x] (2026-07-23) + receipt mutation audit trail [x]
