@@ -2,12 +2,12 @@
 -- Migration 015 — Phase 14.2, follow-up finding (not in the original F0-F5
 -- list): tasks.assigned_to has no firm-membership validation at all
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- ⚠ NOT YET APPLIED — drafted for Jay's review in Supabase Studio. Do not
--- apply via MCP or any automated path; this is a manual-apply-only gate,
--- same as every migration before it (001–014). Per the migration convention
--- (project_context.md header block / docs/DECISIONS.md): once applied and
--- confirmed, THIS FILE'S OWN HEADER must be updated to APPLIED <date> in the
--- same session that folds it into schema.sql.
+-- ✅ APPLIED 2026-07-23 — confirmed clean in Supabase Studio by Jay. Folded
+-- into schema.sql in the same session per the migration convention
+-- (project_context.md header block / docs/DECISIONS.md). NOTE: while probing
+-- this fix, reviewer_id and department_id were found to have the identical
+-- (reviewer_id) or a related (department_id, partner-only) gap — NOT fixed
+-- by this migration, see migration 016.
 --
 -- Found while probing migration 014's F4 fix, not part of the original
 -- sweep's F0-F5 list: `assigned_to UUID REFERENCES public.profiles(id)` has

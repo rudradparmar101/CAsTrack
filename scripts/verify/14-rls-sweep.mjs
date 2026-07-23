@@ -754,6 +754,59 @@ async function main() {
       insertOk, insertOk ? `INSERT succeeded, assigned_to: ${data.assigned_to}` : `INSERT denied: ${error?.message} (would mean tasks.create alone cannot set an initial assignee)`);
     if (data) await admin.from('tasks').delete().eq('id', newTaskId); // cleanup — this was a throwaway probe row, not part of the fixed seed set
   }
+
+  // MIGRATION 015 FIX PROBE: assigned_to now also requires firm membership,
+  // checked unconditionally (data integrity, not permission) on both INSERT
+  // and UPDATE, including service-role writes. Four cases.
+  {
+    // 1. Cross-firm assigned_to on INSERT: E0 creates a Firm A task with
+    // assigned_to pointing at EVB (Firm B) — must be REJECTED. This was the
+    // exact follow-up finding.
+    const newTaskId = randomUUID();
+    const { error } = await e0.from('tasks').insert({
+      id: newTaskId, firm_id: ID.firmA, client_id: ID.clientA2, department_id: ids.gstA,
+      title: `${TAG} migration 015 cross-firm INSERT probe`, due_date: '2027-01-31',
+      assigned_to: ids.evbId, created_by: ids.e0Id,
+    }).select('id').single();
+    R('Migration 015 fix: E0 is REJECTED creating a Firm A task with assigned_to pointing at EVB (Firm B) — firm-membership check on INSERT',
+      !!error, error ? `denied: ${error.message}` : 'INSERT SUCCEEDED — cross-firm assigned_to gap still open');
+    await admin.from('tasks').delete().eq('id', newTaskId); // in case it wrongly succeeded
+  }
+  {
+    // 2. Cross-firm assigned_to on UPDATE: EP (holds tasks.assign) attempts
+    // to reassign taskA2Gst to EVB (Firm B) — must be REJECTED. Proves the
+    // firm check fires independently of (and after) the permission check —
+    // holding tasks.assign is necessary but not sufficient.
+    const { error } = await ep.from('tasks').update({ assigned_to: ids.evbId }).eq('id', ID.taskA2Gst).select();
+    R('Migration 015 fix: EP (holds tasks.assign) is REJECTED reassigning taskA2Gst to EVB (Firm B) — firm-membership check on UPDATE',
+      !!error, error ? `denied: ${error.message}` : 'UPDATE SUCCEEDED — cross-firm assigned_to gap still open');
+  }
+  {
+    // 3. Same-firm assignment still succeeds on both INSERT and UPDATE — no
+    // regression. INSERT: EP creates a task assigned to EV (same firm).
+    const newTaskId = randomUUID();
+    const { data: insData, error: insError } = await ep.from('tasks').insert({
+      id: newTaskId, firm_id: ID.firmA, client_id: ID.clientA2, department_id: ids.gstA,
+      title: `${TAG} migration 015 same-firm INSERT probe`, due_date: '2027-01-31',
+      assigned_to: ids.evId, created_by: ids.epId,
+    }).select('id, assigned_to').single();
+    // UPDATE: EP reassigns taskA2Gst back to EV (same firm).
+    const { data: updData, error: updError } = await ep.from('tasks').update({ assigned_to: ids.evId }).eq('id', ID.taskA2Gst).select('id, assigned_to').single();
+    R('Migration 015 fix: same-firm assignment still SUCCEEDS on both INSERT and UPDATE (no regression)',
+      !insError && insData?.assigned_to === ids.evId && !updError && updData?.assigned_to === ids.evId,
+      `insert: ${insError?.message || 'ok'}, update: ${updError?.message || 'ok'}`);
+    if (insData) await admin.from('tasks').delete().eq('id', newTaskId);
+  }
+  {
+    // 4. Service-role write with a cross-firm assigned_to is ALSO rejected —
+    // the firm check is data integrity, not authorization, so it applies
+    // unconditionally (unlike the tasks.assign permission gate, which
+    // deliberately exempts service_role).
+    const { error } = await admin.from('tasks').update({ assigned_to: ids.evbId }).eq('id', ID.taskA2Gst).select();
+    R('Migration 015 fix: a service_role write with a cross-firm assigned_to is ALSO rejected (data-integrity check applies unconditionally)',
+      !!error, error ? `denied: ${error.message}` : 'UPDATE SUCCEEDED — data-integrity check does not apply to service_role');
+    await admin.from('tasks').update({ assigned_to: ids.evId }).eq('id', ID.taskA2Gst); // restore for idempotent re-runs
+  }
   {
     const { data, error } = await ev.from('tasks').delete().eq('id', ID.taskGst).select();
     R('tasks: EV (employee, not partner) DELETE denied (partner-only)', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);

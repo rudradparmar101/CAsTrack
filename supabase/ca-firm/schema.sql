@@ -1257,21 +1257,43 @@ CREATE TRIGGER record_task_stage_history
 -- service-role signal here (not auth.role(), migration 010/011's pattern)
 -- because every UPDATE policy on tasks is TO authenticated only — an anon
 -- caller can never reach this trigger at all, so no ambiguity exists.
+-- Migration 015 extends this to also fire BEFORE INSERT and validate that
+-- assigned_to belongs to the task's own firm — a data-integrity check, not
+-- a permission gate, so it applies even to service-role writes (unlike the
+-- permission-gate branch above, which is UPDATE-only and unchanged).
 CREATE OR REPLACE FUNCTION public.enforce_task_assignment_permission()
 RETURNS TRIGGER AS $$
 BEGIN
-  IF NEW.assigned_to IS DISTINCT FROM OLD.assigned_to THEN
-    IF auth.uid() IS NULL THEN RETURN NEW; END IF;  -- service role / SQL editor
-    IF NOT public.has_permission('tasks.assign') THEN
-      RAISE EXCEPTION 'You do not have permission to reassign this task';
+  -- Permission gate (migration 014): reassigning an EXISTING task requires
+  -- tasks.assign. UPDATE-only — initial assignment via INSERT stays governed
+  -- by tasks.create alone (a recorded decision, not an oversight).
+  IF TG_OP = 'UPDATE' AND NEW.assigned_to IS DISTINCT FROM OLD.assigned_to THEN
+    IF auth.uid() IS NOT NULL THEN  -- service role / SQL editor bypasses the permission gate only
+      IF NOT public.has_permission('tasks.assign') THEN
+        RAISE EXCEPTION 'You do not have permission to reassign this task';
+      END IF;
     END IF;
   END IF;
+
+  -- Firm-membership validation (migration 015): assigned_to must reference a
+  -- profile in the SAME firm as the task, whenever it is being set. Applies
+  -- unconditionally, including to service-role writes.
+  IF NEW.assigned_to IS NOT NULL
+     AND (TG_OP = 'INSERT' OR NEW.assigned_to IS DISTINCT FROM OLD.assigned_to) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.profiles p
+      WHERE p.id = NEW.assigned_to AND p.firm_id = NEW.firm_id
+    ) THEN
+      RAISE EXCEPTION 'assigned_to must be a member of the same firm as the task';
+    END IF;
+  END IF;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SET search_path = public;
 
 CREATE TRIGGER enforce_task_assignment
-  BEFORE UPDATE ON public.tasks
+  BEFORE INSERT OR UPDATE ON public.tasks
   FOR EACH ROW EXECUTE FUNCTION public.enforce_task_assignment_permission();
 
 -- 9.5 New document version -> bump parent pointer, force re-approval, and
