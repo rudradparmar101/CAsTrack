@@ -717,6 +717,47 @@ silently break the trigger it exists for). 119/119 sweep checks pass overall.
 touched. F1-RPC through F5, the `client_outstanding` anon-grant fold-in, migration 008's stale
 header, and the systemic SECURITY DEFINER audit remain open — see `docs/ROADMAP.md` Phase 14.2.
 
+### 2026-07-23 — Phase 14.2, F1-RPC fixed and applied: get_firm_plan() ownership check
+**Decision:** migration 011 adds a `billing.view` permission check and a firm-ownership check
+(`p_firm_id = get_user_firm_id()`) inside `get_firm_plan()`'s body — same shape as F0 — with
+`is_super_admin()` added alongside `service_role` as an exemption from the **ownership check
+only**. Applied cleanly in Studio, folded into `schema.sql`, migration header updated to
+`✅ APPLIED 2026-07-23`.
+**Rationale:** the function is `SECURITY DEFINER`, bypassing `firm_subscriptions`'
+`billing.view`-gated RLS entirely, and took an arbitrary firm UUID with zero checks — an
+employee with `billing.view` revoked got her own firm's plan anyway, a different firm's
+employee got real cross-tenant plan data by UUID, and a `client_user` could do the same. The
+`is_super_admin()` exemption is necessary because `platform_admins.user_id` FKs to
+`auth.users`, not `profiles` — a platform super admin has no `profiles` row at all, so
+`get_user_firm_id()` resolves NULL for them, and a bare ownership check would wrongly block
+the cross-firm visibility `platform_admins` exists to grant. `has_permission()` already
+resolves `true` for a super admin internally, so only the ownership check needed the new
+exemption.
+**Proof, not policy-reading:** `scripts/verify/14-rls-sweep.mjs` seeded a new role (PSA — a
+`platform_admins` row with deliberately no `profiles` row, mirroring the real bootstrap path)
+and added 6 cases, all passing: cross-firm employee rejected; same-firm `billing.view` holder
+succeeds; same-firm caller without `billing.view` rejected (permission guard independent of
+ownership — this is the exact original bypass); `client_user` rejected cross-firm; PSA
+succeeds cross-firm (the regression-risk case — proves the exemption is actually wired up, not
+just written); direct `service_role` call succeeds. 122/122 sweep checks pass.
+**Status:** resolved and shipped, committed separately (`2ae59b6`). F2 through F5 remain open.
+
+### 2026-07-23 — Known input for Phase 15: firm_has_feature() will need its own DEFINER body
+**Decision (recorded now, not acted on):** when Phase 15 wires plan/seat/storage enforcement
+into server actions, `firm_has_feature()` must NOT keep proxying through `get_firm_plan()` —
+it should get its own `SECURITY DEFINER` function scoped directly to `get_user_firm_id()`,
+with no `p_firm_id` argument at all.
+**Rationale:** migration 011's F1-RPC fix (previous entry) added a `billing.view` requirement
+to `get_firm_plan()`, and `firm_has_feature()` calls `get_firm_plan()` internally — so it now
+inherits that requirement too. Harmless today (`firm_has_feature()` has zero callers anywhere
+in `src/`), but Phase 15's enforcement work will call it from ordinary employee-run server
+actions, most of whom default to `billing.view = false`. A boolean answering "does my own
+firm's plan include this feature" is not billing-sensitive in the same way a full plan/pricing
+readout is — gating it on `billing.view` would incorrectly block plan-limit enforcement for
+the majority of staff.
+**Status:** not yet acted on — deliberately out of scope for migration 011 (per explicit
+instruction not to touch that migration for this). Tracked in `docs/ROADMAP.md` Phase 15.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)

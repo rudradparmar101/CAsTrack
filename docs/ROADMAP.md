@@ -301,8 +301,17 @@ confirmed by Jay before any further work.
       cases in `scripts/verify/14-rls-sweep.mjs` (cross-firm rejected, same-firm
       billing.manage succeeds, same-firm without billing.manage rejected, service_role path
       still succeeds) — 119/119 sweep checks pass. Committed separately (`d8d2db9`).
-- [ ] F1-RPC (high): scope `get_firm_plan()` to the caller's own firm (or require
-      billing.view), closing the cross-tenant plan/feature leak.
+- [x] F1-RPC (high): **fixed and applied 2026-07-23** — migration 011 adds a `billing.view`
+      permission check and a firm-ownership check on `p_firm_id` inside `get_firm_plan()`'s
+      body, exempting `is_super_admin()`/`service_role` from the ownership check only (a
+      super admin has no `profiles` row at all, so `get_user_firm_id()` resolves NULL for
+      them). Applied cleanly in Studio, folded into `schema.sql`, migration header updated to
+      APPLIED. Proved via 6 new cases in `scripts/verify/14-rls-sweep.mjs` (cross-firm
+      rejected, same-firm billing.view succeeds, same-firm without billing.view rejected,
+      client_user rejected, super_admin cross-firm succeeds — a newly-seeded platform admin
+      with no profiles row proves the exemption itself works — and service_role succeeds) —
+      122/122 sweep checks pass. Committed separately (`2ae59b6`). **Known follow-on for
+      Phase 15:** see that phase's new item on `firm_has_feature()`.
 - [ ] F2 (high, architectural decision): either formally document the staff storage policy's
       firm-wide (not department-scoped) reach in ROLES_AND_RLS.md, or rewrite it to join
       through `documents` and re-apply `staff_can_access_task()`/`clients.view`, mirroring the
@@ -341,6 +350,7 @@ confirmed by Jay before any further work.
 
 ## Phase 15 — SaaS plumbing [ ]
 - [ ] Plan/seat/storage enforcement in server actions (existing DB helpers get_firm_plan / firm_has_feature / storage_used_bytes).
+- [ ] **Known input from Phase 14.2's F1-RPC fix (migration 011, 2026-07-23):** `firm_has_feature()` now inherits `get_firm_plan()`'s `billing.view` requirement (it calls `get_firm_plan()` internally). Fine today — `firm_has_feature()` has zero callers in `src/`. Not fine once this phase wires plan/seat enforcement into server actions that run as ordinary employees, most of whom default to `billing.view = false` — a boolean about the caller's own firm's plan capability doesn't warrant a billing-visibility gate. Give `firm_has_feature()` its own `SECURITY DEFINER` body scoped to the caller's own firm (`get_user_firm_id()`, no `p_firm_id` argument at all) rather than proxying through the now billing.view-gated `get_firm_plan()`. See `docs/DECISIONS.md`'s matching 2026-07-23 entry.
 - [ ] ⚠ HUMAN: Razorpay account/keys. Webhooks → firm_subscriptions / subscription_invoices via service role.
 - [ ] Super-admin /admin surface (plans, firms, subscriptions; platform_admins-gated).
 
