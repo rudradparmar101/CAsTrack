@@ -565,6 +565,41 @@ forward) automatically re-arms future alerts: the stored `(tier, expiry)` pair f
 last send simply no longer matches the new expiry, with no explicit reset trigger needed.
 **Status:** active. (Phase 13.2, migration 008)
 
+### 2026-07-23 — Phase 13.3 Step 0: Supabase MCP unavailable, substituted an empirical probe
+**Decision:** the session plan's Step 0 required inspecting `user_permissions`' RLS via
+Supabase MCP (reads only) before writing any editor UI. The MCP server was not configured
+in that environment. Rather than trust `schema.sql` alone (a local file with a known prior
+drift incident — see the migration-006 note below) or skip the gate, Step 0 was closed with
+`scripts/verify/12-permissions-ui.mjs`: a committed, self-seeding, raw-PostgREST probe run
+against the live database, mirroring `10-dsc-register.mjs`'s house style.
+**Rationale:** Jay confirmed this framing directly ("it's an upgrade, not a substitute: an
+empirical probe against the live DB proves more than reading policy text would") and
+reordered the plan so the probe script is written and run FIRST, before any UI code, exactly
+as Step 0 originally demanded of the MCP read. It paid off immediately: the first run was
+24/25, not 25/25 — the probe caught a real gap (next entry) that a policy-text read might
+well have missed, since the written SQL for the write policies was correct and only the
+SELECT policy was wrong.
+**Status:** active. Once Supabase MCP is available in a session, prefer it for quick
+policy-text checks, but a live empirical probe remains the stronger proof for any
+privilege-escalation-sensitive surface and is what actually gated this build.
+
+### 2026-07-23 — Migration 009: user_permissions self-view SELECT scoped to employees
+**Decision:** the pre-existing `"Users can view their own permission overrides"` SELECT
+policy (`USING (user_id = auth.uid())`, no role check) was replaced with one restricted to
+`get_user_role() = 'employee'`.
+**Rationale:** found by `12-permissions-ui.mjs` check II1: a `client_user` (or a partner)
+whose `user_permissions` row could only ever be force-seeded by service-role — the
+INSERT/UPDATE/DELETE policies already correctly require the target to be a same-firm
+`role='employee'` row — was still readable by that user via raw PostgREST if such a row
+ever existed, because the SELECT policy had no matching role restriction. No write path was
+ever affected (all four write-side checks against a client_user passed on the first run);
+this was a defense-in-depth gap, not a demonstrated escalation. Closed at the DB layer
+rather than left resting on "no write path currently creates one," since Phase 13.3's own
+requirement was "a client_user gets zero rows," unconditionally. Applied in Studio, folded
+into `schema.sql` immediately (same-day, unlike migrations that sit drafted for longer),
+re-verified 25/25.
+**Status:** active. (Phase 13.3, migration 009)
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)

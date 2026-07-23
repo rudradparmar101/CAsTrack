@@ -220,8 +220,30 @@ confirmed by Jay before any further work.
       state rather than a partial register. `npm run build` + `npm run lint` both clean
       throughout (zero errors/warnings, baseline unchanged).
 
-### Phase 13.3 — Per-employee permissions UI [ ]
-- [ ] Per-employee user_permissions editor on the Team page (grant/revoke overrides).
+### Phase 13.3 — Per-employee permissions UI [x]
+- [x] Per-employee user_permissions editor on the `/team` page — a partner-only "Permissions"
+      action per employee row opens a modal listing every catalog key grouped by category,
+      each showing its `role_permissions` default, any `user_permissions` override, and the
+      resolved effective value, with Grant/Revoke/Reset-to-default as three distinct actions
+      (reset deletes the override row, returning the key to its role default — not the same
+      as revoke, which pins `granted=false`).
+- [x] Step 0 gate: Supabase MCP was unavailable at session start; substituted an empirical
+      raw-PostgREST probe (`scripts/verify/12-permissions-ui.mjs`) run BEFORE any UI code, per
+      the session's explicit reordering. First run: 24/25 — found `user_permissions`'s
+      self-view SELECT policy had no role check, so a `client_user` could read a stray row of
+      their own if one ever existed (no write path was ever affected). Migration 009 scoped
+      that SELECT to `role='employee'`. Applied in Studio, folded into schema.sql, re-run:
+      25/25 — self-grant/peer-grant blocked for employees, partner cannot edit her own row or
+      another partner's row (via INSERT/UPDATE/DELETE, all three), client_user zero rows/zero
+      write path, and `has_permission()` correctly reflects grant/revoke/reset-to-default via
+      RPC checks on two keys with opposite role defaults.
+- [x] Exit gate: `scripts/verify/13-permissions-playwright.mjs` (committed, 7/7) drives the
+      real `/team` UI: baseline employee redirected away from `/templates`
+      (`templates.manage` default false) -> partner grants it through the real editor ->
+      employee's `/templates` becomes reachable with "New Template" visible (proving the
+      resolution path end to end, not just a row write) -> partner revokes through the editor
+      -> employee redirected away again. `npm run build` + `npm run lint` both clean (zero
+      errors/warnings, baseline unchanged).
 
 ## Phase 13.5 — Notices & litigation module (WEDGE) [ ]  ⚠ HUMAN GATE — do not start until >=15 real CA firm validation conversations confirm notice-deadline pain. If they don't, re-scope the wedge, not the project.
 - [ ] notices table: type (143(1)/139(9)/148/ASMT-10/DRC-01/GSTR-3A/other), client_id,
