@@ -817,6 +817,43 @@ run). 127/127 sweep checks pass.
 **Status:** resolved and shipped, committed separately (`7952076`). F4 (architectural — Jay's
 call, not yet made) and F5 remain open.
 
+### 2026-07-23 — Phase 14.2, F4 fixed and applied: tasks.assign gets a real enforcement point
+**Decision:** add a real RLS-layer enforcement point for `tasks.assign`, not formally accept
+`tasks.update_department` as sufficient and correct the docs/catalog instead — the second
+option the sweep doc offered. Migration 014 adds a `BEFORE UPDATE` trigger,
+`enforce_task_assignment_permission()`, that blocks any change to `assigned_to` unless the
+caller holds `has_permission('tasks.assign')`. Applied cleanly in Studio, folded into
+`schema.sql` (new §9.4b), migration header updated to `✅ APPLIED 2026-07-23`.
+**Rationale:** RLS policies are row-scoped, not column-scoped — no policy can say "this UPDATE
+may touch `department_id` but not `assigned_to`" without narrowing the department-updater
+policy's own intentionally broad reach (any column, any department task). This project already
+has the matching pattern for exactly this class of problem — `enforce_profile_protected_fields()`
+(§9.2) and `guard_firm_invoice`'s frozen-column list — reused here rather than inventing a third
+mechanism. `has_permission('tasks.assign')` alone is sufficient inside the check (no separate
+partner/super_admin branch needed, since `has_permission()` already resolves both true
+internally). `auth.uid() IS NULL` (not `auth.role() = 'service_role'`, migration 010/011's
+pattern) is the correct service-role signal here, because every UPDATE policy on `tasks` is
+`TO authenticated` only — an anon caller can never reach this trigger, so the ambiguity that
+motivated `auth.role()` for directly-callable SECURITY DEFINER RPCs doesn't exist for a trigger
+gated behind a `TO authenticated`-only policy set.
+**Proof, not policy-reading:** `scripts/verify/14-rls-sweep.mjs` gained 5 cases, all passing: the
+fix itself (E0 denied); partner bypass intact; a real `tasks.assign` holder unaffected (no
+regression); an unrelated-column update still succeeds (trigger correctly scoped to
+`assigned_to` only); and a fifth case raised mid-review — `tasks.create` alone can still set an
+initial assignee via INSERT, since the trigger is UPDATE-only. 131/131 sweep checks pass.
+**The INSERT-time case, investigated rather than assumed:** concluded this is intended, not a
+gap — create-and-assign in one step is normal workflow (the app's own `createTaskAction` already
+allows it), and the INSERT itself stays gated to the creator's own department.
+**A genuine follow-up gap, found while investigating that case, NOT one of the original 7
+findings:** `assigned_to` has no firm-membership validation at all, on INSERT or UPDATE.
+Confirmed directly: E0 created a Firm A task with `assigned_to` pointing to a Firm B employee,
+and it succeeded with no error. Jay's call: fix now, same session (migration 015, drafted,
+pushed, not yet applied at the time of this entry) rather than defer to 14.1b, since the trigger
+is already open in context and this is a genuine cross-tenant data-integrity gap.
+**Status:** F4 resolved and shipped, committed separately (`ad2fd8d`). The follow-up
+firm-membership gap is drafted (migration 015) but not yet applied — see the next entry once
+confirmed. F5 remains open.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)

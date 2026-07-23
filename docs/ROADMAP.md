@@ -346,8 +346,30 @@ confirmed by Jay before any further work.
       lowest-risk of the three targets and today the only path, even in principle, to ever
       revoke a client's portal login, since no dedicated "revoke portal access" UI exists
       yet). 127/127 sweep checks pass. Committed separately (`7952076`).
-- [ ] F4 (medium, architectural decision): decide whether tasks.assign gets a real, separate
-      RLS check for reassignment, or formally accept that tasks.update_department implies it.
+- [x] F4 (medium, architectural decision): **fixed and applied 2026-07-23** — Jay's call: add
+      a real enforcement point, not accept `tasks.update_department` as sufficient. Since RLS
+      is row-scoped, not column-scoped (a policy can't say "may touch `department_id` but not
+      `assigned_to`"), the fix is a `BEFORE UPDATE` trigger (`enforce_task_assignment_permission`,
+      migration 014) that blocks any change to `assigned_to` unless the caller holds
+      `has_permission('tasks.assign')` — reusing the exact pattern
+      `enforce_profile_protected_fields()` already established for the same class of problem.
+      Applied cleanly in Studio, folded into `schema.sql` (new §9.4b), migration header
+      updated to APPLIED. Proved via 5 cases in `scripts/verify/14-rls-sweep.mjs` — the fix
+      itself, partner bypass intact, a real `tasks.assign` holder unaffected, an unrelated
+      column update (not touching `assigned_to`) still succeeds, and a 5th case raised
+      mid-review: `tasks.create` alone can still set an initial assignee via INSERT (the
+      trigger is UPDATE-only) — established empirically and recorded as **INTENDED** (see
+      `project_context.md` §4.22). 131/131 sweep checks pass. Committed separately (`ad2fd8d`).
+      **Follow-up, NOT part of the original F0–F5 list, found while probing this fix:**
+      `assigned_to` has no firm-membership validation at all (a task could be assigned to a
+      user in a completely different firm). Migration 015 (drafted, not yet applied) closes
+      it — see below.
+- [ ] Follow-up (found 2026-07-23 while probing F4, not one of the original 7 findings):
+      `tasks.assigned_to` has no check anywhere that the referenced profile belongs to the
+      same firm as the task. Migration 015 extends `enforce_task_assignment_permission()` to
+      also fire on INSERT and validate firm membership on `assigned_to` whenever it's set —
+      a data-integrity check, not a permission gate, so it applies even to service-role
+      writes. Drafted, pushed, **not yet applied** — pending Jay's Studio confirmation.
 - [ ] F5 (low, architectural decision): decide whether task-less documents should be
       department-scoped for employees (would need a schema change — clients don't carry a
       department today) or formally accept firm-wide reach via clients.view as correct.
