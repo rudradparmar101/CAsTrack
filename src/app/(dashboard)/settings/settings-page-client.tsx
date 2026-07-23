@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { updateProfileAction, updateOrganizationAction, changePasswordAction } from './actions';
+import { MIN_PASSWORD_LENGTH } from '@/lib/auth/password-policy';
 import { createClient } from '@/lib/supabase/client';
 import type { Profile, Firm } from '@/lib/types';
 
@@ -139,12 +140,24 @@ export function SettingsPageClient({ profile, firm }: SettingsPageClientProps) {
           </CardTitle>
         </CardHeader>
         <form onSubmit={handleChangePassword} className="space-y-4">
+          {/* Re-authentication. Without this, a stolen session becomes a
+              permanent account takeover in one request — see the action's own
+              comment and the audit's M3. */}
+          <Input
+            label="Current Password"
+            name="current_password"
+            type="password"
+            placeholder="Confirm it's you"
+            autoComplete="current-password"
+            required
+          />
           <div className="relative">
             <Input
               label="New Password"
               name="new_password"
               type={showPassword ? 'text' : 'password'}
-              placeholder="Minimum 8 characters"
+              placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+              autoComplete="new-password"
               required
             />
             <button

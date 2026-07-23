@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { provisionClientFromInvite } from '@/lib/provisioning';
+import { validatePassword } from '@/lib/auth/password-policy';
 import { checkRateLimit, getClientIp, rateLimitMessage } from '@/lib/rate-limit';
 
 export interface AcceptInviteResult {
@@ -36,8 +37,11 @@ export async function acceptClientInviteAction(
   if (!token) {
     return { success: false, error: 'This invitation link is malformed. Ask your CA firm to resend it.' };
   }
-  if (!password || password.length < 6) {
-    return { success: false, error: 'Password must be at least 6 characters.' };
+  // The shared policy, not a local copy — this call site used to hardcode its
+  // own `< 6` check and was the weakest of the three doors into the app.
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    return { success: false, error: passwordError };
   }
 
   // Same bucket as the accept-invite page's own lookup — see that file.

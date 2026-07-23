@@ -4,6 +4,7 @@ import React, { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { acceptClientInviteAction } from './actions';
+import { MIN_PASSWORD_LENGTH } from '@/lib/auth/password-policy';
 
 /**
  * Password-set form for an already-validated invitation. The email is shown
@@ -50,7 +51,7 @@ export function AcceptInviteForm({
         label="Password"
         name="password"
         type="password"
-        placeholder="Min. 6 characters"
+        placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
         required
         minLength={6}
         autoComplete="new-password"

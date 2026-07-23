@@ -6,6 +6,7 @@ import { Mail, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { signupCreateFirmAction, signupJoinFirmAction } from './actions';
+import { MIN_PASSWORD_LENGTH } from '@/lib/auth/password-policy';
 
 type SignupMode = 'create' | 'join';
 
@@ -156,7 +157,7 @@ export default function SignupPage() {
           label="Password"
           name="password"
           type="password"
-          placeholder="Min. 6 characters"
+          placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
           required
           minLength={6}
           autoComplete="new-password"
