@@ -57,6 +57,7 @@ export default async function TeamPage() {
       departments={(departments as DepartmentWithMembers[]) || []}
       firm={{ invite_code: firm.invite_code }}
       currentUserId={userId}
+      currentUserIsPartner={isPartner}
       initialHasMore={(members || []).length === MEMBERS_PAGE_SIZE}
     />
   );

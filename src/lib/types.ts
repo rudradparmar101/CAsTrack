@@ -699,3 +699,45 @@ export interface DscCustodyMovementWithRefs extends DscCustodyMovement {
   to_custodian: Pick<Profile, 'id' | 'name'> | null;
   recorder: Pick<Profile, 'id' | 'name'> | null;
 }
+
+// ============================================
+// Per-employee permissions editor (Phase 13.3, migration 009). Partner-only,
+// reads AND writes — RLS on user_permissions restricts writes to
+// role='partner' targeting a same-firm role='employee' row (never self,
+// never another partner, never a client_user); see migration 009 for the
+// SELECT-side fix (self-view scoped to employees) and
+// scripts/verify/12-permissions-ui.mjs for the empirical proof.
+// ============================================
+
+export interface PermissionCatalogEntry {
+  key: string;
+  description: string;
+  category: string;
+}
+
+export interface RolePermission {
+  role: UserRole;
+  permission_key: string;
+  allowed: boolean;
+}
+
+export interface UserPermission {
+  user_id: string;
+  permission_key: string;
+  granted: boolean;
+  granted_by: string | null;
+  created_at: string;
+}
+
+/** One row per catalog key, resolved for a single employee: the role
+ * default, any override, and the effective value has_permission() would
+ * return — exactly what the editor needs to show "on because default" vs
+ * "on because explicitly granted". */
+export interface ResolvedPermissionRow {
+  key: string;
+  description: string;
+  category: string;
+  roleDefault: boolean;
+  override: boolean | null; // null = no override row (following the role default)
+  effective: boolean;
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Edit, Users2, UserPlus, Ban, CheckCircle2 } from 'lucide-react';
+import { Plus, Edit, Users2, UserPlus, Ban, CheckCircle2, Shield } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { TeamInviteCode } from './team-invite-code';
 import { TeamForm } from './team-form';
 import { TeamMembersModal } from './team-members-modal';
+import { PermissionsEditorModal } from './permissions-editor-modal';
 import { createDepartmentAction, updateDepartmentAction, toggleDepartmentActiveAction, fetchMoreMembersAction } from './actions';
 import { MEMBERS_PAGE_SIZE } from '@/lib/pagination';
 import type { DepartmentWithMembers, Profile } from '@/lib/types';
@@ -20,6 +21,7 @@ interface TeamPageClientProps {
   departments: DepartmentWithMembers[];
   firm: { invite_code: string };
   currentUserId: string;
+  currentUserIsPartner: boolean;
   initialHasMore: boolean;
 }
 
@@ -29,11 +31,13 @@ export function TeamPageClient({
   departments,
   firm,
   currentUserId,
+  currentUserIsPartner,
   initialHasMore,
 }: TeamPageClientProps) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingDepartment, setEditingDepartment] = useState<DepartmentWithMembers | null>(null);
   const [managingDepartment, setManagingDepartment] = useState<DepartmentWithMembers | null>(null);
+  const [permissionsEmployee, setPermissionsEmployee] = useState<{ id: string; name: string } | null>(null);
   const [actionError, setActionError] = useState('');
   const [memberList, setMemberList] = useState(members);
   const [hasMore, setHasMore] = useState(initialHasMore);
@@ -217,6 +221,11 @@ export function TeamPageClient({
                   <th className="text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider px-6 py-3 hidden md:table-cell">
                     Departments
                   </th>
+                  {currentUserIsPartner && (
+                    <th className="text-right text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider px-6 py-3">
+                      Permissions
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
@@ -271,6 +280,22 @@ export function TeamPageClient({
                           )}
                         </div>
                       </td>
+                      {currentUserIsPartner && (
+                        <td className="px-6 py-4 text-right">
+                          {member.role === 'employee' ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setPermissionsEmployee({ id: member.id, name: member.name })}
+                            >
+                              <Shield className="h-3.5 w-3.5" />
+                              Permissions
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-[var(--color-text-muted)]">—</span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -329,6 +354,21 @@ export function TeamPageClient({
             department={managingDepartment}
             allMembers={allMembersLite}
             onClose={() => setManagingDepartment(null)}
+          />
+        )}
+      </Modal>
+
+      {/* Permissions Modal */}
+      <Modal
+        open={!!permissionsEmployee}
+        onClose={() => setPermissionsEmployee(null)}
+        title={`Permissions — ${permissionsEmployee?.name}`}
+        maxWidth="lg"
+      >
+        {permissionsEmployee && (
+          <PermissionsEditorModal
+            employee={permissionsEmployee}
+            onClose={() => setPermissionsEmployee(null)}
           />
         )}
       </Modal>
