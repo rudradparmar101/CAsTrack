@@ -35,3 +35,10 @@ export const SERVER_ACTION_BODY_LIMIT = MAX_DOCUMENT_SIZE + 1024 * 1024;
 export function formatMaxDocumentSize(): string {
   return `${Math.round(MAX_DOCUMENT_SIZE / (1024 * 1024))}MB`;
 }
+
+/** Human size for an arbitrary byte count, for "that file is 14.2MB" errors. */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}

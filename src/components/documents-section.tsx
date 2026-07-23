@@ -21,7 +21,7 @@ import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ACCEPTED_EXTENSIONS, ACCEPTED_LABEL } from '@/lib/documents/file-types';
-import { formatMaxDocumentSize } from '@/lib/documents/limits';
+import { MAX_DOCUMENT_SIZE, formatFileSize, formatMaxDocumentSize } from '@/lib/documents/limits';
 import {
   uploadDocumentAction,
   uploadDocumentVersionAction,
@@ -377,12 +377,39 @@ function UploadForm({
     setLoading(true);
     setError('');
 
-    const result = await onSubmit(new FormData(e.currentTarget));
+    const formData = new FormData(e.currentTarget);
 
-    if (result.success) {
-      onDone();
-    } else {
-      setError(result.error || 'Upload failed.');
+    // Check the size in the browser BEFORE the request goes out. The server
+    // action also checks (that is the real control — this input is trivially
+    // bypassed), but a file over the Server Action body limit is rejected by
+    // the framework before the action can run at all, so the action's friendly
+    // message would never be reached. Catching it here is what makes an
+    // oversized upload say something useful instead of failing opaquely.
+    const file = formData.get('file');
+    if (file instanceof File && file.size > MAX_DOCUMENT_SIZE) {
+      setError(
+        `That file is ${formatFileSize(file.size)}. The limit is ${formatMaxDocumentSize()} — ` +
+          `try compressing the scan, or split it into separate documents.`
+      );
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const result = await onSubmit(formData);
+      if (result.success) {
+        onDone();
+      } else {
+        setError(result.error || 'Upload failed.');
+      }
+    } catch {
+      // A rejected Server Action (network drop, or a body the framework
+      // refused outright) would otherwise leave the form spinning with no
+      // explanation at all.
+      setError(
+        `The upload could not be completed. If the file is close to ${formatMaxDocumentSize()}, ` +
+          `try a smaller one; otherwise check your connection and try again.`
+      );
     }
     setLoading(false);
   };
