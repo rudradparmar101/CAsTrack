@@ -600,6 +600,50 @@ into `schema.sql` immediately (same-day, unlike migrations that sit drafted for 
 re-verified 25/25.
 **Status:** active. (Phase 13.3, migration 009)
 
+### 2026-07-23 — Phase 14 split into 14.1 (verification sweep) / 14.2 (fix session) / 14.3 (migration 006 reconciliation)
+**Decision:** the single "Phase 14 — Final RLS pass" roadmap entry is split into three
+independently trackable sub-phases, same pattern as the Phase 13 split above.
+**Rationale:** a verification-only session (14.1) needed to run to completion without the
+temptation to fix anything it found mid-sweep — the session's own explicit instruction was
+"do NOT fix anything you find... a complete map of what's wrong is more valuable than a
+partial sweep with one thing patched." Splitting the fix work into 14.2 (ordinary findings)
+and 14.3 (the migration-006 documentation-accuracy question, which is a ⚠ HUMAN gate distinct
+from ordinary code fixes) keeps each session's scope honest the same way the Phase 13 split
+did.
+**Status:** active. 14.1 is complete (see below); 14.2/14.3 are unscheduled roadmap items.
+
+### 2026-07-23 — Phase 14.1: exhaustive probe-driven RLS sweep, 7 findings, zero fixes applied
+**Decision:** `scripts/verify/14-rls-sweep.mjs` swept 30 of 33 live tables × a full role
+matrix × cross-firm, plus every `SECURITY DEFINER` function taking a caller-influenced
+argument, entirely via real signed-in raw-PostgREST calls (Supabase MCP was available this
+session and was used only to *enumerate* schema objects — table list, function list, live
+column/policy state — never to conclude behavior). 116/116 assertions matched their
+predicted outcome; 7 of those predictions were `FINDING-CHECK`s expecting a gap to exist, and
+all 7 confirmed one. Full detail: `docs/verification/phase-14-rls-sweep.md`.
+**Rationale:** the session's explicit premise — stated up front, not discovered mid-session —
+was that policy-text review had already failed twice in this project (DSC register's
+`is_firm_staff`-vs-`clients.view` scope error, migration 008; `user_permissions`' unscoped
+self-view policy, migration 009), so this pass had to be empirical from the start, and
+exhaustive rather than table-by-table, specifically to catch scope errors invisible in the
+SQL itself. That method caught `apply_receipts_to_invoice()` — a function never named in any
+prior known-risk list in this project — by mechanically asking "does every SECURITY DEFINER
+function's body check anything before it acts," not by checking only functions that seemed
+important in advance.
+**What it found, ranked:** F0 (critical — `apply_receipts_to_invoice()` is a directly
+RPC-callable cross-firm write primitive with zero ownership check), F1-RPC (high —
+`get_firm_plan()` leaks any firm's subscription plan cross-tenant, bypasses `billing.view`),
+F2 (high — the staff storage policy has no task/department scoping, architecturally the same
+shape as the historical client-side `portal-isolation.md` #7), F3 (medium — `profiles` DELETE
+lets a partner remove a co-partner, no target-role exclusion), F4 (medium — `tasks.assign`
+confirmed to have no RLS branch anywhere), F5 (low — task-less documents are visible
+firm-wide to any `clients.view` holder, not department-scoped), plus a ⚠ HUMAN
+documentation-accuracy item: migration 006 is confirmed **live** on the project despite this
+file (see the now-corrected entry above), `docs/ROADMAP.md`, and `project_context.md` all
+having described it as drafted-not-applied.
+**Status:** active, unfixed. See `docs/ROADMAP.md` Phase 14.2/14.3 for the fix-session scope.
+This entry supersedes the "Migration 006 ... is drafted, not applied" claim in the
+operational-knowledge note below — see that note's own correction.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)
@@ -640,13 +684,26 @@ environment-variable reference these point into.
   `apply_migration` — ever. The human-applies-migrations-in-Studio gate (the same ⚠ HUMAN
   pattern used for every migration 001–007 above) is unchanged by having MCP access; MCP
   does not grant a bypass.
-- **Migration 006 (billing audit + pairing) is drafted, not applied.** It is a real,
-  intended Phase 14 migration sitting in the working tree, awaiting the same Studio
-  approval gate as every prior migration. On 2026-07-21 it was found accidentally
+- **⚠ CORRECTED 2026-07-23 (Phase 14.1) — migration 006's on-disk "drafted, not applied"
+  status does NOT match the live database.** This note originally said migration 006
+  (billing audit + pairing) was drafted and unapplied, awaiting the same Studio gate as
+  every prior migration. Phase 14.1's exhaustive RLS sweep queried live
+  `information_schema`/`pg_policies` directly and found `receipt_history` already exists
+  live with RLS enabled and pre-existing rows, and `receipts.invoice_id` is already
+  nullable live — both exactly matching migration 006's design. So at least part of
+  migration 006 IS applied on the live project, contradicting this note, `docs/ROADMAP.md`,
+  and `project_context.md` (all now updated to flag this as a ⚠ HUMAN reconciliation item,
+  not corrected outright, since it's not yet known whether migration 006 is fully or only
+  partially applied). The original truncation note below is still accurate as a *separate*
+  fact (the working-tree file was found truncated on 2026-07-21) — the two facts together
+  mean: don't trust the on-disk migration 006 file's completeness OR its "unapplied" status
+  without checking the live database first. On 2026-07-21 it was found accidentally
   truncated to near-empty in the working tree (alongside a similarly-truncated
   `docs/ROADMAP.md`) — restored from `origin/main`. **Do not treat a local truncation of
   this file as an intentional edit** — verify against `origin/main` before assuming any
-  local state of migration 006 is meaningful.
+  local state of migration 006 is meaningful. See `docs/verification/phase-14-rls-sweep.md`
+  §5 for the full empirical finding and `docs/ROADMAP.md` Phase 14.3 for the reconciliation
+  task.
 
 ---
 

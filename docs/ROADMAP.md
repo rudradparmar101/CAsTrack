@@ -258,13 +258,73 @@ confirmed by Jay before any further work.
       Manual entry is v1. The value is deadline discipline, not typing.
 - [ ] Exit gate: notice -> task -> reminder -> response -> ARN end to end, RLS-verified
 
-## Phase 14 — Final RLS pass + committed policy tests [ ]
-- [ ] Re-review every policy vs finalized behavior: Ph3 documents INSERT relaxation; tasks.assign branch decision; doc↔task client-consistency trigger; stage-history note via session variable; all Ph9–13 tables. ⚠ migration gate for policy changes.
-- [ ] receipt mutation audit trail — receipts are DELETE/UPDATE-able by billing.manage with no history; consider trigger-only receipt_history. (Phase 12 review finding 3: cash receipts are a fraud surface; task_stage_history is the existing trigger-only-writable precedent.)
-- [ ] Idempotent policy-recreator script; expand rls-smoke.ts into a committed role-JWT suite covering the full matrix; wire as an npm script.
-- [ ] guard_firm_invoice frozen-column list omits status / amount_received / tds_received — a caller that bypasses RLS can corrupt settlement state; needs the session-variable pattern to allow only apply_receipts_to_invoice().
+## Phase 14 — Final RLS pass + committed policy tests
+
+### Phase 14.1 — Exhaustive probe-driven RLS verification sweep [x]
+- [x] `scripts/verify/14-rls-sweep.mjs` (committed, self-seeding, idempotent — 116/116 assertions
+      matched their predicted outcome). Every table in the schema (30 of 33 directly; see the
+      script/doc for the 4 not yet probed) × a full role matrix (partner, employee-defaults,
+      employee-zero-permissions, employee-all-permissions, client_user, cross-firm variants of
+      each) via real signed-in raw-PostgREST calls — never policy-text inference. Every
+      SECURITY DEFINER function taking a caller-influenced argument was probed or reasoned
+      about. Storage bucket path-segment isolation re-verified from a new (staff-side) angle.
+      Full writeup: `docs/verification/phase-14-rls-sweep.md`.
+- [x] Empirically closed project_context.md's "cross-firm isolation never swept exhaustively"
+      risk — every table probed this session had at least one cross-firm check.
+- [x] The three named gaps (Ph3 documents INSERT relaxation, tasks.assign branch, doc↔task
+      client-consistency) empirically characterized — first two precisely; the third remains
+      open, not re-probed this session (flagged for 14.1b).
+- [x] **7 findings surfaced**, none fixed this session (verification-only, no DDL applied):
+      F0 (critical — `apply_receipts_to_invoice()` has zero ownership check, directly
+      RPC-callable cross-firm), F1-RPC (high — `get_firm_plan()` leaks any firm's plan
+      cross-tenant, bypasses billing.view), F2 (high — staff storage policy has no
+      task/department scoping, mirrors the historical client-side portal-isolation.md #7),
+      F3 (medium — a partner can DELETE a co-partner's profile, no target-role exclusion),
+      F4 (medium — tasks.assign confirmed to have no RLS branch anywhere; reassignment rides
+      tasks.update_department), F5 (low — task-less documents visible firm-wide to any
+      clients.view holder, not department-scoped), plus a ⚠ HUMAN documentation-accuracy item:
+      migration 006 (receipt_history + nullable receipts.invoice_id) is confirmed LIVE on the
+      project despite project_context.md/DECISIONS.md describing it as drafted-not-applied —
+      needs reconciliation before 14.3 can know its actual remaining scope.
+- [ ] 14.1b (not this session): probe `document_versions`, `firm_invoice_items`,
+      `firm_invoice_counters`, `subscription_invoices` (zero coverage so far); a real
+      super-admin positive-path check; `lookup_client_invitation()`; the doc↔task
+      client-consistency probe.
+
+### Phase 14.2 — Fix session for 14.1's findings [ ] ⚠ migration gate
+- [ ] F0 (critical): add an ownership/firm check to `apply_receipts_to_invoice()`, or REVOKE
+      EXECUTE from authenticated entirely (it's meant to be trigger-only).
+- [ ] F1-RPC (high): scope `get_firm_plan()` to the caller's own firm (or require
+      billing.view), closing the cross-tenant plan/feature leak.
+- [ ] F2 (high, architectural decision): either formally document the staff storage policy's
+      firm-wide (not department-scoped) reach in ROLES_AND_RLS.md, or rewrite it to join
+      through `documents` and re-apply `staff_can_access_task()`/`clients.view`, mirroring the
+      client storage policy's existing `can_access_document()` pattern.
+- [ ] F3 (medium): add a target-role exclusion to the `profiles` DELETE policy so a partner
+      cannot remove a co-partner — needs Jay's call on whether partner-on-partner removal
+      should ever be possible at all.
+- [ ] F4 (medium, architectural decision): decide whether tasks.assign gets a real, separate
+      RLS check for reassignment, or formally accept that tasks.update_department implies it.
+- [ ] F5 (low, architectural decision): decide whether task-less documents should be
+      department-scoped for employees (would need a schema change — clients don't carry a
+      department today) or formally accept firm-wide reach via clients.view as correct.
+- [ ] guard_firm_invoice frozen-column list omits status / amount_received / tds_received — a
+      caller that bypasses RLS can corrupt settlement state; needs the session-variable
+      pattern to allow only apply_receipts_to_invoice() (ties into F0's fix).
 - [ ] Supabase default privileges grant authenticated full DML on new public objects; PUBLIC != authenticated. Every CREATE VIEW and CREATE TABLE must explicitly REVOKE from authenticated, or rely on RLS. Audit all objects for this class of bug — 004's client views were the first instance (fixed in migration 005 for client_invoices/client_invoice_items/client_outstanding; other objects not yet audited).
 - [ ] firms ON DELETE CASCADE to firm_invoices is blocked by guard_firm_invoice_no_delete when any invoice is non-draft, so a firm with issued invoices cannot be hard-deleted through any path. This is desirable (statutory retention) but must be resolved deliberately: adopt firm soft-delete (mirroring the F6 client soft-delete pattern) as part of tenant lifecycle / Phase 15, so hard-delete and this cascade never occur. Until then, firm hard-deletion is effectively disabled for billing-active firms.
+
+### Phase 14.3 — migration 006 reconciliation + receipt mutation audit trail [ ] ⚠ HUMAN GATE
+- [ ] ⚠ HUMAN: reconcile migration 006's on-disk file against live `pg_policies`/
+      `information_schema` state — Phase 14.1 found `receipt_history` + nullable
+      `receipts.invoice_id` already LIVE despite docs saying unapplied. Determine what (if
+      anything) from 006 is still genuinely pending before treating this phase as "apply
+      migration 006."
+- [ ] receipt mutation audit trail — receipts are DELETE/UPDATE-able by billing.manage;
+      `receipt_history` (migration 006, confirmed live) already provides trigger-only history —
+      confirm this satisfies Phase 12 review finding 3, or whether more is needed.
+- [ ] Idempotent policy-recreator script; expand the committed role-JWT suite (14-rls-sweep.mjs
+      + prior scripts) as the ongoing full-matrix regression check; wire as an npm script.
 
 ## Phase 15 — SaaS plumbing [ ]
 - [ ] Plan/seat/storage enforcement in server actions (existing DB helpers get_firm_plan / firm_has_feature / storage_used_bytes).
