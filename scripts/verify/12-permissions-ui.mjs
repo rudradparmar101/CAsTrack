@@ -143,7 +143,10 @@ async function main() {
   const ids = await seed(admin);
 
   const { client: pa1 } = await signInAs(EMAIL.pa1, PASSWORD);
-  const { client: pa2 } = await signInAs(EMAIL.pa2, PASSWORD);
+  // PA2 only needs to exist as an attack target (via PA1's session below) —
+  // signing in confirms the account is real and password-valid, but no
+  // PostgREST call is ever made as PA2 herself.
+  await signInAs(EMAIL.pa2, PASSWORD);
   const { client: ev } = await signInAs(EMAIL.ev, PASSWORD);
   const { client: u } = await signInAs(EMAIL.u, PASSWORD);
 
