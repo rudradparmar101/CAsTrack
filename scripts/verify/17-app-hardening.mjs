@@ -270,11 +270,78 @@ async function sectionDbErrors() {
   }
 }
 
+async function sectionPasswordPolicy() {
+  console.log('\nC. Password policy (M4)');
+  const { validatePassword, MIN_PASSWORD_LENGTH, MAX_PASSWORD_BYTES } = await loadModule(
+    'src/lib/auth/password-policy.ts',
+    'password-policy'
+  );
+
+  check('C1  the floor is 12, not 6', MIN_PASSWORD_LENGTH === 12, `got ${MIN_PASSWORD_LENGTH}`);
+  check('C2  the old 6-character password is now rejected', validatePassword('abc123') !== null);
+  check('C3  an 8-character password (the old settings-only rule) is also rejected', validatePassword('abcd1234') !== null);
+  check('C4  11 characters is rejected (boundary, one below)', validatePassword('a'.repeat(11)) !== null);
+  check('C5  12 characters is accepted (boundary, exactly at)', validatePassword('a'.repeat(12)) === null);
+  check('C6  an empty password is rejected', validatePassword('') !== null);
+
+  // No composition rules, deliberately — a long passphrase must pass.
+  check(
+    'C7  a long all-lowercase passphrase passes (no composition rules, per NIST)',
+    validatePassword('correct horse battery staple') === null
+  );
+
+  // bcrypt truncates at 72 BYTES; rejecting is clearer than silent truncation.
+  check(
+    `C8  a password over ${MAX_PASSWORD_BYTES} bytes is rejected rather than silently truncated`,
+    validatePassword('a'.repeat(MAX_PASSWORD_BYTES + 1)) !== null
+  );
+  check(
+    'C9  the byte limit counts BYTES not characters (multi-byte chars)',
+    validatePassword('é'.repeat(37)) !== null && validatePassword('é'.repeat(20)) === null
+  );
+}
+
+async function sectionRedirects() {
+  console.log('\nD. Redirect allow-listing (L1)');
+  const { safeInternalPath } = await loadModule('src/lib/safe-redirect.ts', 'safe-redirect');
+
+  // The exact bypass the audit proved by execution: `origin + '@evil.com'`
+  // parses with evil.com as the HOST, because praxida.in becomes userinfo.
+  check(
+    'D1  "@evil.com" — THE bypass the audit found — is rejected',
+    safeInternalPath('@evil.com', '/dashboard') === '/dashboard'
+  );
+  check('D2  a protocol-relative "//evil.com" is rejected', safeInternalPath('//evil.com', '/dashboard') === '/dashboard');
+  check('D3  an absolute "https://evil.com" is rejected', safeInternalPath('https://evil.com', '/dashboard') === '/dashboard');
+  check('D4  a backslash-relative "\\\\evil.com" is rejected', safeInternalPath('\\\\evil.com', '/dashboard') === '/dashboard');
+  check('D5  a scheme-relative "javascript:alert(1)" is rejected', safeInternalPath('javascript:alert(1)', '/dashboard') === '/dashboard');
+  check('D6  a bare "evil.com" (no leading slash) is rejected', safeInternalPath('evil.com', '/dashboard') === '/dashboard');
+  check('D7  an empty / missing value falls back', safeInternalPath(null, '/dashboard') === '/dashboard');
+  check(
+    'D8  a CRLF-injecting value is rejected',
+    safeInternalPath('/dashboard\r\nSet-Cookie: a=b', '/dashboard') === '/dashboard'
+  );
+
+  // The no-regression half: every legitimate destination must still work.
+  check('D9  "/dashboard" is preserved', safeInternalPath('/dashboard', '/x') === '/dashboard');
+  check('D10 "/portal" is preserved', safeInternalPath('/portal', '/x') === '/portal');
+  check(
+    'D11 "/reset-password" — the real forgot-password destination — is preserved',
+    safeInternalPath('/reset-password', '/x') === '/reset-password'
+  );
+  check(
+    'D12 a path with a query string is preserved',
+    safeInternalPath('/tasks?stage=in_progress', '/x') === '/tasks?stage=in_progress'
+  );
+}
+
 async function main() {
   console.log('\n17-app-hardening — pure-function proofs for the app-layer audit fixes');
   try {
     await sectionEmail();
     await sectionDbErrors();
+    await sectionPasswordPolicy();
+    await sectionRedirects();
   } finally {
     rmSync(TMP, { recursive: true, force: true });
   }

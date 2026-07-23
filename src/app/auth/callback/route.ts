@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { provisionFromMetadata } from '@/lib/provisioning';
+import { safeInternalPath } from '@/lib/safe-redirect';
 
 /**
  * Auth callback route — handles the redirect after a user clicks
@@ -19,7 +20,10 @@ import { provisionFromMetadata } from '@/lib/provisioning';
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
-  const next = searchParams.get('next') ?? '/dashboard';
+  // Allow-listed to an internal path: this is concatenated onto `origin`
+  // below, and `next=@evil.com` would make evil.com the URL's HOST. See
+  // lib/safe-redirect.ts and the audit's L1.
+  const next = safeInternalPath(searchParams.get('next'), '/dashboard');
 
   if (!code) {
     return NextResponse.redirect(`${origin}/login?error=missing_code`);
