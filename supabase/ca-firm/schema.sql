@@ -941,6 +941,11 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 -- Shared document visibility (used by document_versions policies so the
 -- version rows always inherit exactly the parent document's rules).
+-- NOTE (Phase 14.2, F5 — accepted 2026-07-23, see ROLES_AND_RLS.md §3): the
+-- (task_id IS NULL AND clients.view) branch below is deliberately firm-wide,
+-- not department-scoped, unlike the task-linked branch above it. clients
+-- carry no department affiliation in this schema, so a task-less document
+-- has no department to scope to — accepted as correct, not a gap.
 CREATE OR REPLACE FUNCTION public.can_access_document(p_document_id UUID)
 RETURNS BOOLEAN AS $$
   SELECT EXISTS (

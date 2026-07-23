@@ -392,9 +392,17 @@ confirmed by Jay before any further work.
       separately (`b5e7cab`). **Recorded as an open question, not acted on:** should
       `reviewer_id` assignment also require `tasks.assign`, the way `assigned_to` now does?
       See `docs/DECISIONS.md`.
-- [ ] F5 (low, architectural decision): decide whether task-less documents should be
-      department-scoped for employees (would need a schema change — clients don't carry a
-      department today) or formally accept firm-wide reach via clients.view as correct.
+- [x] F5 (low, architectural decision): **resolved 2026-07-23, documentation-only, no
+      migration.** Jay's call: formally accept firm-wide reach via `clients.view` as correct,
+      not add department-scoping. `clients` carry no department affiliation in this schema (a
+      single client's tasks routinely span multiple departments), so "which department should
+      a task-less upload belong to" has no natural answer without inventing a client-level
+      department column — its own design decision, not a small migration, and not warranted
+      for a low-severity, by-design-permission scoping question. Recorded in
+      `supabase/ca-firm/ROLES_AND_RLS.md` §3 (new "Deliberate exception" note) and as a
+      `schema.sql` comment directly above `can_access_document()`'s task-less branch, so the
+      next reader sees the decision in place, not just in a dated doc. See
+      `docs/DECISIONS.md`.
 - [ ] guard_firm_invoice frozen-column list omits status / amount_received / tds_received — a
       caller that bypasses RLS can corrupt settlement state; needs the session-variable
       pattern to allow only apply_receipts_to_invoice() (ties into F0's fix).

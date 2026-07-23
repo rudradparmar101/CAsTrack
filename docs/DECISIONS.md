@@ -906,6 +906,31 @@ partner on both INSERT and UPDATE; same-firm values for both still succeed on bo
 **Status:** resolved and shipped, committed separately (`b5e7cab`). F5 remains open; the
 `reviewer_id`/`tasks.assign` question above is open, not scheduled.
 
+### 2026-07-23 — Phase 14.2, F5 resolved: task-less documents stay firm-wide, by design
+**Decision:** accept firm-wide visibility of task-less documents (via `clients.view`) as
+intended, not add department-scoping. No migration, no schema change — documentation only.
+**Rationale:** `can_access_document()`'s task-linked branch is department-scoped via
+`staff_can_access_task()`, but its task-less branch (`clients.view` OR
+`employee_has_task_for_client()`) has no department check at all — architecturally
+inconsistent with every other document-access path in this schema. However, `clients` carry no
+department affiliation anywhere in the data model: a single client's tasks routinely span
+multiple departments (GST, income tax, audit, etc. all for the same client), so "which
+department should a task-less upload belong to" has no natural answer without inventing a new
+client-level column — a real product-modeling decision (what does "a client's department" even
+mean), not a small migration. `clients.view` being the employee default specifically exists to
+grant broad client visibility by design, and F5's own severity is LOW for exactly that reason —
+not worth a schema change to force a scoping model the rest of the client data doesn't support.
+**Recorded where a future reader would actually look**, not just in this dated entry: a new
+"Deliberate exception" note in `supabase/ca-firm/ROLES_AND_RLS.md` §3, and a comment directly
+above `can_access_document()`'s definition in `schema.sql` naming the exact branch this applies
+to.
+**Status:** resolved, documentation-only. **This closes Phase 14.1's full findings list** —
+F0 through F5, plus the migration-006 documentation-accuracy item, are ALL now resolved, along
+with both follow-up data-integrity gaps found while fixing F4 (`assigned_to`/`reviewer_id`/
+`department_id` firm checks, migrations 015/016). Remaining Phase 14.2 scope: the
+`client_outstanding` anon-grant fold-in, migration 008's stale header, and the systemic
+SECURITY DEFINER audit + this file's own standing-rule addition.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)
