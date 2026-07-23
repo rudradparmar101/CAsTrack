@@ -2,12 +2,10 @@
 -- Migration 014 — Phase 14.2, finding F4 (MEDIUM): give tasks.assign a real
 -- RLS-layer enforcement point
 -- Target: the LIVE Praxida Supabase project (fwmmdyebvzncpezdwnxm).
--- ⚠ NOT YET APPLIED — drafted for Jay's review in Supabase Studio. Do not
--- apply via MCP or any automated path; this is a manual-apply-only gate,
--- same as every migration before it (001–013). Per the migration convention
--- (project_context.md header block / docs/DECISIONS.md): once applied and
--- confirmed, THIS FILE'S OWN HEADER must be updated to APPLIED <date> in the
--- same session that folds it into schema.sql.
+-- ✅ APPLIED 2026-07-23 — confirmed clean in Supabase Studio by Jay; the
+-- enforce_task_assignment trigger is present on the tasks table. Folded
+-- into schema.sql in the same session per the migration convention
+-- (project_context.md header block / docs/DECISIONS.md).
 --
 -- Found by: docs/verification/phase-14-rls-sweep.md, finding F4 — check #58.
 -- `tasks.assign` is a real key in the permissions catalog ("Assign/reassign

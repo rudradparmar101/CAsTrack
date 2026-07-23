@@ -221,6 +221,14 @@ async function seed(admin) {
   // tasks.assign too (it isn't — see the FINDING-CHECK below).
   await up(admin, 'user_permissions', { user_id: e0Id, permission_key: 'tasks.update_department', granted: true, granted_by: paId }, 'user_id,permission_key');
 
+  // A SECOND deliberate exception on E0, for the F4 INSERT-time probe
+  // (migration 014's trigger is BEFORE UPDATE only — it says nothing about
+  // assigning on INSERT): tasks.create = true, tasks.assign stays false.
+  // Isolates "can tasks.create alone set assigned_to on a brand-new task"
+  // from "can tasks.assign-less reassignment happen on an EXISTING task"
+  // (already covered by the tasks.update_department exception above).
+  await up(admin, 'user_permissions', { user_id: e0Id, permission_key: 'tasks.create', granted: true, granted_by: paId }, 'user_id,permission_key');
+
   // Tasks: taskGst (EV's dept, assigned to EV, client A1) — the in-scope
   // positive case. taskIncomeTax (different dept, unassigned, client A1) —
   // out of scope for EV/E0/EP. taskA2Gst (EV's dept, but client A2) — used
@@ -688,19 +696,63 @@ async function main() {
     const { data, error } = await ua2.from('tasks').select('id').eq('id', ID.taskGst);
     R('tasks: UA2 (sibling client) sees ZERO rows for A1\'s task', !error && (data || []).length === 0, error?.message || `rows: ${data?.length}`);
   }
+  // F4 FIX PROBE (migration 014): a BEFORE UPDATE trigger now blocks
+  // assigned_to changes unless the caller holds has_permission('tasks.assign')
+  // (which already resolves true for partner/super_admin). Five cases —
+  // the trigger fix itself, its two no-regression paths, an unrelated-column
+  // update proving the trigger is scoped to assigned_to only, and a fifth,
+  // newly-raised question about the INSERT-time path the trigger can't
+  // cover at all.
   {
-    // FINDING-CHECK: tasks.assign has NO RLS branch anywhere (project_context.md
-    // §6 item 5). E0 has EVERY permission revoked EXCEPT tasks.update_department
-    // (deliberately left on — see the seed comment) — she is NOT the assignee
-    // of taskA2Gst (EV is), but she IS a member of its department (gstA). The
-    // "Department updaters can update department tasks" policy checks
-    // tasks.update_department and department membership — nothing else — so
-    // if it lets her change `assigned_to` at all, that proves reassignment
-    // rides this policy with NO separate tasks.assign check anywhere.
-    const { data, error } = await e0.from('tasks').update({ assigned_to: ids.epId }).eq('id', ID.taskA2Gst).select();
-    R('FINDING-CHECK tasks: E0 (tasks.assign explicitly REVOKED, only tasks.update_department granted) CAN reassign a department task she is NOT even assigned to (no RLS branch for tasks.assign)',
+    // 1. E0 (tasks.assign explicitly REVOKED, only tasks.update_department
+    // granted) attempts to reassign taskA2Gst (her department, not her
+    // assignment) — must now be REJECTED. This was the original F4 finding.
+    const { error } = await e0.from('tasks').update({ assigned_to: ids.epId }).eq('id', ID.taskA2Gst).select();
+    R('F4 fix: E0 (tasks.assign revoked, tasks.update_department granted) is REJECTED reassigning taskA2Gst (department update alone no longer suffices)',
+      !!error, error ? `denied: ${error.message}` : 'reassignment SUCCEEDED — gap still open');
+  }
+  {
+    // 2. Partner bypass: PA can still reassign — has_permission('tasks.assign')
+    // resolves true for partner internally, no separate branch needed.
+    const { data, error } = await pa.from('tasks').update({ assigned_to: ids.epId }).eq('id', ID.taskA2Gst).select();
+    R('F4 fix: PA (partner) SUCCEEDS reassigning taskA2Gst (bypass intact)',
       !error && (data || []).length === 1 && data[0].assigned_to === ids.epId, error?.message || `rows: ${JSON.stringify(data)}`);
     await admin.from('tasks').update({ assigned_to: ids.evId }).eq('id', ID.taskA2Gst); // restore for idempotent re-runs
+  }
+  {
+    // 3. tasks.assign holder: EP (every permission granted, including
+    // tasks.assign) reassigns — no regression for the legitimate path.
+    const { data, error } = await ep.from('tasks').update({ assigned_to: ids.e0Id }).eq('id', ID.taskA2Gst).select();
+    R('F4 fix: EP (tasks.assign granted) SUCCEEDS reassigning taskA2Gst (no regression)',
+      !error && (data || []).length === 1 && data[0].assigned_to === ids.e0Id, error?.message || `rows: ${JSON.stringify(data)}`);
+    await admin.from('tasks').update({ assigned_to: ids.evId }).eq('id', ID.taskA2Gst); // restore for idempotent re-runs
+  }
+  {
+    // 4. Department update NOT touching assigned_to: E0 (no tasks.assign)
+    // updates taskA2Gst's title via tasks.update_department alone — must
+    // still succeed. Proves the trigger is scoped to assigned_to only and
+    // hasn't over-restricted tasks.update_department's own intended reach.
+    const { data, error } = await e0.from('tasks').update({ title: `${TAG} GST task for A2 (F4 probe)` }).eq('id', ID.taskA2Gst).select();
+    R('F4 fix: E0 (no tasks.assign) SUCCEEDS updating taskA2Gst\'s title via tasks.update_department alone (trigger scoped to assigned_to only)',
+      !error && (data || []).length === 1, error?.message || `rows: ${JSON.stringify(data)}`);
+  }
+  {
+    // 5. NEW, raised by Jay: the trigger is BEFORE UPDATE only — it says
+    // nothing about assignment via INSERT. E0 now also holds tasks.create
+    // (granted for this probe alone, see the seed comment) but still lacks
+    // tasks.assign. She creates a BRAND-NEW task in her own department
+    // (gstA) with assigned_to already set to EV (a same-firm, same-
+    // department peer) at INSERT time.
+    const newTaskId = randomUUID();
+    const { data, error } = await e0.from('tasks').insert({
+      id: newTaskId, firm_id: ID.firmA, client_id: ID.clientA2, department_id: ids.gstA,
+      title: `${TAG} F4 INSERT-assign probe`, due_date: '2027-01-31',
+      assigned_to: ids.evId, created_by: ids.e0Id,
+    }).select('id, assigned_to').single();
+    const insertOk = !error && !!data && data.assigned_to === ids.evId;
+    R('F4 INSERT-time check: E0 (tasks.create granted, tasks.assign still revoked) CAN create a new department task with assigned_to already set (assignment achieved via INSERT, not covered by the BEFORE UPDATE trigger) — established empirically, recorded as INTENDED (see project_context.md/DECISIONS.md): create-and-assign in one step is normal workflow, and the INSERT itself is still gated to E0\'s own department',
+      insertOk, insertOk ? `INSERT succeeded, assigned_to: ${data.assigned_to}` : `INSERT denied: ${error?.message} (would mean tasks.create alone cannot set an initial assignee)`);
+    if (data) await admin.from('tasks').delete().eq('id', newTaskId); // cleanup — this was a throwaway probe row, not part of the fixed seed set
   }
   {
     const { data, error } = await ev.from('tasks').delete().eq('id', ID.taskGst).select();

@@ -1246,6 +1246,34 @@ CREATE TRIGGER record_task_stage_history
   AFTER INSERT OR UPDATE ON public.tasks
   FOR EACH ROW EXECUTE FUNCTION public.log_task_stage_change();
 
+-- 9.4b tasks.assign enforcement (migration 014, F4 fix — reassignment rode
+-- entirely on tasks.update_department, which is meant to be a broad
+-- "update any task in own departments" permission, not an assignment-
+-- specific gate). RLS policies are row-scoped, not column-scoped, so this
+-- needs a trigger, not a fourth policy — mirrors enforce_profile_protected_
+-- fields()'s pattern for the same class of problem. has_permission(
+-- 'tasks.assign') alone is sufficient: it already resolves true for
+-- partner/super_admin internally. auth.uid() IS NULL is the correct
+-- service-role signal here (not auth.role(), migration 010/011's pattern)
+-- because every UPDATE policy on tasks is TO authenticated only — an anon
+-- caller can never reach this trigger at all, so no ambiguity exists.
+CREATE OR REPLACE FUNCTION public.enforce_task_assignment_permission()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.assigned_to IS DISTINCT FROM OLD.assigned_to THEN
+    IF auth.uid() IS NULL THEN RETURN NEW; END IF;  -- service role / SQL editor
+    IF NOT public.has_permission('tasks.assign') THEN
+      RAISE EXCEPTION 'You do not have permission to reassign this task';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SET search_path = public;
+
+CREATE TRIGGER enforce_task_assignment
+  BEFORE UPDATE ON public.tasks
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_task_assignment_permission();
+
 -- 9.5 New document version -> bump parent pointer, force re-approval, and
 -- maintain the firm's storage counter. SECURITY DEFINER so a client_user's
 -- version upload can update the parent row they have no UPDATE policy for.
