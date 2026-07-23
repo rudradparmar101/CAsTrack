@@ -30,7 +30,7 @@ export default async function AcceptInvitePage({
   // abuse surface — token brute force/probing). Checked before the RPC so a
   // guessing script never gets a real query once it trips the limit.
   const ip = await getClientIp();
-  const rateLimit = await checkRateLimit('accept_invite_lookup', ip, 20, 3600);
+  const rateLimit = await checkRateLimit('accept_invite_lookup', ip);
   if (!rateLimit.allowed) {
     return <TooManyAttempts retryAfterSeconds={rateLimit.retryAfterSeconds} />;
   }

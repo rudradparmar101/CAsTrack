@@ -1,5 +1,6 @@
 import { headers } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { rateLimitRule, type RateLimitAction } from '@/lib/rate-limit-config';
 
 /**
  * DB-backed rate limiting for public/unauthenticated endpoints (migration
@@ -70,14 +71,21 @@ export async function evaluateRateLimit(
   }
 }
 
+/**
+ * Check one bucket. The limit and window are looked up from
+ * lib/rate-limit-config.ts by action name rather than passed in — so the
+ * numbers live in exactly one place, and `action` is a union type, making a
+ * typo'd action (previously a silently-separate bucket that denied nobody) a
+ * compile error. See that module's header for why config lives in code and
+ * not in the database.
+ */
 export async function checkRateLimit(
-  action: string,
-  identifier: string,
-  maxAttempts: number,
-  windowSeconds: number
+  action: RateLimitAction,
+  identifier: string
 ): Promise<RateLimitResult> {
   const supabase = await createClient();
-  return evaluateRateLimit(supabase, action, identifier, maxAttempts, windowSeconds);
+  const { max, windowSeconds } = rateLimitRule(action);
+  return evaluateRateLimit(supabase, action, identifier, max, windowSeconds);
 }
 
 /** allowed iff every result is allowed; retryAfterSeconds is the largest of any denials. */

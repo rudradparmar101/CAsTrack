@@ -42,7 +42,7 @@ export async function acceptClientInviteAction(
 
   // Same bucket as the accept-invite page's own lookup — see that file.
   const ip = await getClientIp();
-  const rateLimit = await checkRateLimit('accept_invite_lookup', ip, 20, 3600);
+  const rateLimit = await checkRateLimit('accept_invite_lookup', ip);
   if (!rateLimit.allowed) {
     return { success: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) };
   }

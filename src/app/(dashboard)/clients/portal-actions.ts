@@ -3,6 +3,7 @@
 import { getAuthProfile } from '@/lib/auth';
 import { sendEmail } from '@/lib/email/resend';
 import { portalInviteEmail } from '@/lib/email/templates';
+import { checkRateLimit, combineRateLimits, rateLimitMessage } from '@/lib/rate-limit';
 import type { ActionResultWithData } from '@/lib/types';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -19,6 +20,27 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *
  * Email delivery is via Resend (Phase 11) — the invite URL is also returned
  * so the UI can still offer copy-to-clipboard as a fallback.
+ *
+ * RECIPIENT IS CONSTRAINED TO THE CLIENT'S OWN RECORDED CONTACTS (app-layer
+ * security audit, finding M5). `email` used to be free text that went straight
+ * to Resend, so any `clients.manage` holder could send a branded, DKIM-signed
+ * message from the firm's verified domain to ANY address on the internet, one
+ * per call, unbounded. That is a sending-reputation problem before it is an
+ * app problem: bounce and spam complaints accrue to `mail.praxida.in`, and
+ * degraded deliverability would silently hit EVERY firm on the platform at
+ * once — including firms whose own invites and statutory reminders then stop
+ * arriving, with no visible symptom in this app at all.
+ *
+ * Why the client's contact SET and not simply `clients.email`: a firm
+ * routinely invites the client's accountant or CFO rather than a generic
+ * company inbox, which is exactly what `client_authorized_persons` records.
+ * Narrowing to `clients.email` alone would have broken a real workflow and
+ * invited a workaround. The set below keeps that workflow open while making
+ * every possible recipient something a `clients.manage` holder had to write
+ * into the client record first — a revalidated, attributable, visible action —
+ * instead of a free-text field that leaves no trace. It converts a silent
+ * one-shot relay into a noisy one, which is the actual security property
+ * wanted here.
  */
 export async function inviteClientUserAction(
   clientId: string,
@@ -46,16 +68,51 @@ export async function inviteClientUserAction(
     }
   }
 
+  // Two buckets: per-user catches one compromised or malicious staff account,
+  // per-firm caps the blast radius when several are involved. Checked after
+  // the permission gate (an unauthorised caller should not be able to consume
+  // a legitimate firm's quota) but before any email is sent or row written.
+  const rateLimit = combineRateLimits([
+    await checkRateLimit('client_invite_user', userId),
+    await checkRateLimit('client_invite_firm', profile.firm_id),
+  ]);
+  if (!rateLimit.allowed) {
+    return { success: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) };
+  }
+
   // RLS-scoped read: resolves only if the client belongs to this firm and is
   // visible to this user.
   const { data: client } = await supabase
     .from('clients')
-    .select('id, name')
+    .select('id, name, email')
     .eq('id', clientId)
     .single();
 
   if (!client) {
     return { success: false, error: 'Client not found.' };
+  }
+
+  // The recipient allow-list: the client's own email plus every authorized
+  // person recorded against that client. Also RLS-scoped, so it can only ever
+  // resolve contacts of a client this caller can already see.
+  const { data: persons } = await supabase
+    .from('client_authorized_persons')
+    .select('email')
+    .eq('client_id', clientId)
+    .not('email', 'is', null);
+
+  const allowedRecipients = new Set(
+    [client.email, ...(persons ?? []).map((p) => p.email as string | null)]
+      .filter((e): e is string => !!e)
+      .map((e) => e.trim().toLowerCase())
+  );
+
+  if (!allowedRecipients.has(trimmedEmail)) {
+    return {
+      success: false,
+      error:
+        'That address isn’t on this client’s record. Portal invites can only go to the client’s own email or one of its authorized persons — add the contact to the client first, then invite them.',
+    };
   }
 
   const { data: invitation, error: insertError } = await supabase

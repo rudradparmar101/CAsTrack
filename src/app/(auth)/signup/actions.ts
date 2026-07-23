@@ -39,7 +39,7 @@ export async function signupCreateFirmAction(formData: FormData): Promise<Signup
   }
 
   const ip = await getClientIp();
-  const rateLimit = await checkRateLimit('auth_signup', ip, 20, 3600);
+  const rateLimit = await checkRateLimit('auth_signup', ip);
   if (!rateLimit.allowed) {
     return { success: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) };
   }
@@ -110,7 +110,7 @@ export async function signupJoinFirmAction(formData: FormData): Promise<SignupRe
   // (no email cost), so brute-force/enumeration resistance is its job, not
   // protecting shared infrastructure. Checked BEFORE the RPC so a guessing
   // script never even gets a real query once it trips the limit.
-  const lookupRateLimit = await checkRateLimit('invite_code_lookup', ip, 30, 3600);
+  const lookupRateLimit = await checkRateLimit('invite_code_lookup', ip);
   if (!lookupRateLimit.allowed) {
     return { success: false, error: rateLimitMessage(lookupRateLimit.retryAfterSeconds) };
   }
@@ -130,7 +130,7 @@ export async function signupJoinFirmAction(formData: FormData): Promise<SignupRe
 
   // Same bucket/limit as signupCreateFirmAction — a real signUp() call is a
   // real account-creation attempt regardless of which mode it came through.
-  const signupRateLimit = await checkRateLimit('auth_signup', ip, 20, 3600);
+  const signupRateLimit = await checkRateLimit('auth_signup', ip);
   if (!signupRateLimit.allowed) {
     return { success: false, error: rateLimitMessage(signupRateLimit.retryAfterSeconds) };
   }

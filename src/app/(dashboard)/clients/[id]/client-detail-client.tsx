@@ -21,8 +21,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
+import { Select } from '@/components/ui/select';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ClientForm } from '@/components/client-form';
 import { DocumentsSection } from '@/components/documents-section';
@@ -407,20 +407,56 @@ export function ClientDetailClient({
         onClose={() => setShowInviteModal(false)}
         title="Invite to Client Portal"
       >
-        <InvitePortalForm clientId={client.id} defaultEmail={client.email || ''} />
+        <InvitePortalForm
+          clientId={client.id}
+          contacts={buildInviteContacts(client, authorizedPersons)}
+        />
       </Modal>
     </div>
   );
 }
 
+interface InviteContact {
+  email: string;
+  label: string;
+}
+
+/**
+ * The recipients a portal invite may go to: the client's own email plus every
+ * authorized person who has one. This mirrors EXACTLY the allow-list
+ * inviteClientUserAction enforces server-side — the picker exists so the
+ * constraint guides the user instead of surprising them with a rejection, not
+ * as the control itself. The server never trusts this list.
+ */
+function buildInviteContacts(
+  client: Client,
+  authorizedPersons: ClientAuthorizedPerson[]
+): InviteContact[] {
+  const seen = new Set<string>();
+  const contacts: InviteContact[] = [];
+
+  const add = (email: string | null, label: string) => {
+    const normalized = email?.trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    contacts.push({ email: normalized, label });
+  };
+
+  add(client.email, `${client.name} (client email)`);
+  for (const person of authorizedPersons) {
+    add(person.email, `${person.name}${person.designation ? ` — ${person.designation}` : ''}`);
+  }
+  return contacts;
+}
+
 function InvitePortalForm({
   clientId,
-  defaultEmail,
+  contacts,
 }: {
   clientId: string;
-  defaultEmail: string;
+  contacts: InviteContact[];
 }) {
-  const [email, setEmail] = useState(defaultEmail);
+  const [email, setEmail] = useState(contacts[0]?.email ?? '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [inviteUrl, setInviteUrl] = useState('');
@@ -471,17 +507,34 @@ function InvitePortalForm({
     );
   }
 
+  if (contacts.length === 0) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg bg-[var(--color-warning-bg)] border border-[var(--color-warning-border)] px-4 py-3 text-sm text-[var(--color-warning-text)]">
+          This client has no email address on record, and no authorized person with
+          one. Portal invites can only be sent to a contact saved on the client, so
+          add the client&apos;s email or an authorized person first, then invite them.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <Input
-        label="Client's email"
-        type="email"
+      <Select
+        label="Send the invitation to"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        placeholder="person@client.com"
         required
-        hint="They'll set a password via the invitation link and see only this client's data."
+        options={contacts.map((contact) => ({
+          value: contact.email,
+          label: `${contact.label} — ${contact.email}`,
+        }))}
       />
+      <p className="text-sm text-[var(--color-text-muted)]">
+        Only contacts saved on this client can be invited. They&apos;ll set a password
+        via the invitation link and see only this client&apos;s data.
+      </p>
 
       {error && (
         <div className="rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-4 py-3 text-sm text-[var(--color-danger-text)]">

@@ -50,8 +50,8 @@ export async function requestPasswordResetAction(formData: FormData): Promise<Ac
   // upstream protection of its own (see migration 019's header).
   const ip = await getClientIp();
   const rateLimit = combineRateLimits([
-    await checkRateLimit('forgot_password_email', email, 8, 3600),
-    await checkRateLimit('forgot_password_ip', ip, 15, 3600),
+    await checkRateLimit('forgot_password_email', email),
+    await checkRateLimit('forgot_password_ip', ip),
   ]);
   if (!rateLimit.allowed) {
     return { success: false, error: rateLimitMessage(rateLimit.retryAfterSeconds) };
