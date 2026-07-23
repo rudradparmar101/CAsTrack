@@ -292,8 +292,15 @@ confirmed by Jay before any further work.
       client-consistency probe.
 
 ### Phase 14.2 — Fix session for 14.1's findings [ ] ⚠ migration gate
-- [ ] F0 (critical): add an ownership/firm check to `apply_receipts_to_invoice()`, or REVOKE
-      EXECUTE from authenticated entirely (it's meant to be trigger-only).
+- [x] F0 (critical): **fixed and applied 2026-07-23** — migration 010 adds a `billing.manage`
+      permission check and a firm-ownership check on `p_invoice_id` inside
+      `apply_receipts_to_invoice()`'s body, exempting `auth.role() = 'service_role'` so
+      `handle_receipt_change()`'s internal trigger-invocation path (fired on every `receipts`
+      write, including service-role-driven ones) is unaffected. Applied cleanly in Studio,
+      folded into `schema.sql`, migration file header updated to APPLIED. Proved via 4 new
+      cases in `scripts/verify/14-rls-sweep.mjs` (cross-firm rejected, same-firm
+      billing.manage succeeds, same-firm without billing.manage rejected, service_role path
+      still succeeds) — 119/119 sweep checks pass. Committed separately (`d8d2db9`).
 - [ ] F1-RPC (high): scope `get_firm_plan()` to the caller's own firm (or require
       billing.view), closing the cross-tenant plan/feature leak.
 - [ ] F2 (high, architectural decision): either formally document the staff storage policy's

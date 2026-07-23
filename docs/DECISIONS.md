@@ -690,6 +690,33 @@ noted, not corrected as part of this decision (out of scope for the session that
 **Status:** active. Applies to every migration from here forward; migration 006's header was
 corrected same-day as the first application of this rule.
 
+### 2026-07-23 — Phase 14.2, F0 fixed and applied: apply_receipts_to_invoice() ownership check
+**Decision:** migration 010 adds a `billing.manage` permission check and a firm-ownership
+check (`p_invoice_id` must resolve to a row in the caller's own firm) inside
+`apply_receipts_to_invoice()`'s body, gated behind `auth.role() <> 'service_role'` so the
+internal `handle_receipt_change()` trigger-invocation path — which fires on every `receipts`
+write, including service-role-driven ones with no JWT at all — is unaffected. Applied cleanly
+in Studio, folded into `schema.sql`, migration file header updated to `✅ APPLIED 2026-07-23`
+in the same session per the convention above.
+**Rationale:** the function is `SECURITY DEFINER`, so it bypasses RLS entirely — its own body
+was the only security boundary that could ever exist for it, and until this fix that boundary
+was empty, letting any authenticated user in any firm force a write against another firm's
+`firm_invoices` row. `auth.role() = 'service_role'` was chosen over `auth.uid() IS NULL` as the
+trusted-caller signal specifically because an anon-key caller with no session also presents a
+null `auth.uid()` — the two cannot be told apart that way, whereas `auth.role()` reads a
+JWT-signed claim that an anon or authenticated caller cannot forge into `'service_role'`.
+**Proof, not policy-reading:** `scripts/verify/14-rls-sweep.mjs` gained 4 cases, all passing —
+a cross-firm caller with zero billing permission is rejected; a same-firm caller with
+`billing.manage` succeeds (no regression on the legitimate path); a same-firm caller WITHOUT
+`billing.manage` is also rejected (proves the permission guard fires independently of the
+ownership check — this caller does own the firm relationship but still lacks the permission);
+and a direct `service_role` RPC call still succeeds (proves the exemption is intact and didn't
+silently break the trigger it exists for). 119/119 sweep checks pass overall.
+**Status:** resolved and shipped, committed separately from any other Phase 14.2 item
+(`d8d2db9`), per the guardrail that F0 ships alone before F1-RPC and the remaining findings are
+touched. F1-RPC through F5, the `client_outstanding` anon-grant fold-in, migration 008's stale
+header, and the systemic SECURITY DEFINER audit remain open — see `docs/ROADMAP.md` Phase 14.2.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)
