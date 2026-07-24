@@ -1,6 +1,25 @@
 # Project Context — CA Firm Management SaaS
 
-> **Last updated:** 2026-07-24 (**Public-endpoint rate limiting, off-roadmap, applied** — migration
+> **Last updated:** 2026-07-24 (**App-layer security audit fixes, off-roadmap, shipped** — all ten
+> prioritised findings from `docs/verification/app-layer-security-audit.md` fixed code-only, ten
+> commits `ae96d5a`..`997a88d`, pushed. Upload type now validated server-side by magic bytes
+> (allow-list; HTML/SVG excluded) with forced attachment downloads; portal-invite recipient
+> constrained to the client's recorded contacts + rate-limited (was an open DKIM'd-domain email
+> relay); Next 16.2.4→16.2.11 (all 22 next advisories cleared); email templates HTML-escaped;
+> ~50 raw-Postgres-error UI leaks routed through one `friendlyDbError()` (loud-fail on RLS
+> denials preserved); the 1 MB-vs-10 MB upload body-limit product bug fixed; security headers
+> added (`frame-ancestors`/`form-action`/`base-uri`/`object-src` enforced, full script-CSP
+> report-only pending nonce work — see `next.config.ts`); three authenticated actions rate-limited
+> via a new typed `lib/rate-limit-config.ts` (typo'd action = compile error); password floor 6→12
+> unified across all call sites + re-auth required on change; `next` redirect param allow-listed.
+> Two committed verify scripts (`16-upload-safety.mjs` 22/22 incl. live bucket round-trip +
+> negative control; `17-app-hardening.mjs` 41/41); full regression on a fresh prod build
+> 190+22+41+19 green; `npm audit fix` never run. **Two ⚠ HUMAN carry-forwards:** raise Supabase
+> Auth's project-level minimum password length to 12 (else the app floor is API-bypassable), and
+> optionally set the `client-documents` bucket's `allowed_mime_types`/`file_size_limit` as a
+> storage backstop. Full detail + resolution table: `docs/verification/app-layer-security-audit.md`
+> and `docs/DECISIONS.md`'s 2026-07-24 entry. Previous entry — **Public-endpoint rate limiting,
+> off-roadmap, applied** — migration
 > 019 adds a DB-backed, serverless-safe rate limiter (`rate_limit_buckets` + atomic
 > `check_rate_limit()` RPC) wired into every public/unauthenticated endpoint: signup (both
 > create-firm and join-firm modes), the join-firm invite-code lookup, forgot-password (the

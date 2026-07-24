@@ -1189,6 +1189,53 @@ no regression. `rate_limit_buckets` independently confirmed unreadable by a pure
 signature migration 017 established project-wide).
 **Status:** resolved and shipped.
 
+### 2026-07-24 — App-layer security audit fixes: all ten items shipped, code-only
+**Decision:** fix all ten findings from `docs/verification/app-layer-security-audit.md` in one
+session, each as its own commit, code-only — no migration was required, and the one live-DB
+change (bucket MIME/size limits) was deliberately left as a ⚠ HUMAN item since it is
+defence-in-depth behind the app-layer allow-list, not load-bearing for any fix.
+**The three decisions inside this work that a future session must not re-litigate:**
+- **Upload type is decided by the server from magic bytes, allow-list not deny-list**
+  (`lib/documents/file-types.ts`). `file.type`/filename extension are attacker-controlled and
+  never used for the stored content type or path. HTML/SVG are absent and uncallable-in. Two
+  honest limitations documented in the module: docx/xlsx/pptx share the ZIP signature (extension
+  is load-bearing for LABELLING only, never the allow/deny), and CSV/TXT have no signature so
+  content-plausibility (no NUL, first non-space byte ≠ `<`) is the check. Downloads force
+  `Content-Disposition: attachment` at all five signed-URL sites via one shared helper.
+- **Portal-invite recipient is constrained to the client's own recorded contacts**
+  (`clients.email` ∪ `client_authorized_persons.email`), NOT to `clients.email` alone. Firms
+  legitimately invite the client's accountant/CFO; narrowing to one address would break a real
+  workflow and invite a workaround. The value is making every recipient something a
+  `clients.manage` holder had to write into the record first — turning a silent one-shot relay
+  into a noisy, attributable one. This is a sending-reputation control (abuse of the DKIM'd
+  domain degrades deliverability for every firm at once), not only an app control.
+- **CSP is split, enforced-plus-report-only, deliberately.** Rendering-safe directives
+  (`frame-ancestors`/`form-action`/`base-uri`/`object-src`) are enforced now — clickjacking is
+  closed. A full `script-src` needs a per-request nonce, which Next's own CSP guide says
+  *requires dynamic rendering*; this app deliberately prerenders `/`/`/login`/`/signup` static.
+  That trade-off is its own decision, so the full policy ships as `-Report-Only` with a
+  finish-it note in `next.config.ts`. Do not enforce `script-src` without doing the nonce work
+  and accepting the dynamic-rendering cost.
+**Also decided:** password floor raised 6→12 (OWASP ASVS L1), no composition rules (NIST), one
+shared `validatePassword()` across all four call sites; password change now re-authenticates via
+a real `signInWithPassword()` on a cookie-less throwaway client (`lib/supabase/reauth.ts`) so the
+verification can't disturb the caller's session; DB errors mapped through one `friendlyDbError()`
+that preserves the `.select().single()` loud-fail on RLS denials and passes P0001 RAISE messages
+through verbatim; `next` redirect param allow-listed (`lib/safe-redirect.ts`).
+**Rate limiter untouched**, per the standing guardrail — thresholds moved into a typed config
+module (`lib/rate-limit-config.ts`) whose keys are a union type, so a typo'd action is now a
+compile error instead of a silently-dead bucket.
+**Proof, not assertion:** two committed verify scripts (`16-upload-safety.mjs` 22/22 including a
+live bucket round-trip + negative control; `17-app-hardening.mjs` 41/41 across email/DB-error/
+password/redirect), both importing the REAL modules via `tsc` rather than reimplementing them.
+Full regression on a fresh production build: 190 + 22 + 41 + 19 green. `npm audit fix` was never
+run; the Next bump (16.2.4→16.2.11) was the only dependency change and cleared all 22 next
+advisories.
+**Status:** resolved and shipped, ten commits `ae96d5a`..`997a88d`. Two carry-forwards, both
+⚠ HUMAN: raise Supabase Auth's project-level minimum password length to 12 (or the app floor is
+API-bypassable), and optionally set the `client-documents` bucket's `allowed_mime_types`/
+`file_size_limit` as a storage-layer backstop.
+
 ---
 
 ## Operational knowledge (not architecture decisions, but cost real debugging time)

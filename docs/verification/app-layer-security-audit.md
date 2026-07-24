@@ -18,6 +18,48 @@
 
 ---
 
+## Resolution status (fix session, 2026-07-24)
+
+A follow-up session fixed all ten prioritised items. **Code only — no migration was needed;
+the one live-DB change (bucket `allowed_mime_types`/`file_size_limit`) is defence-in-depth and
+is listed for the human below, not required for any fix to hold.** Each fix shipped as its own
+commit; each has a machine-checked proof.
+
+| # | Finding | Status | Commit | Proof |
+|---|---|---|---|---|
+| M1 | Upload type validation + attachment disposition | **Fixed** | `ae96d5a` | `16-upload-safety.mjs` 22/22 (both directions, incl. live round-trip + negative control) |
+| M5a | Portal-invite email relay (recipient constraint + rate limit) | **Fixed** | `db65c7c` | recipient allow-list + two rate buckets |
+| M6 | Rate-limit thresholds as typed config module | **Fixed** | `db65c7c` | union type; typo → compile error, demonstrated |
+| H1 | Next.js 16.2.4 → 16.2.11 | **Fixed** | `dc08d6b` | all 22 next advisories cleared; 190/190 sweep, prod-build re-verify |
+| M2 | Email-template HTML escaping | **Fixed** | `1c3423e` | `17-app-hardening.mjs` §A 10/10 |
+| L2 | Raw Postgres messages reaching the UI | **Fixed** | `7137f0c` | `17` §B 10/10 (loud-fail preserved, detail logged) |
+| L5 | 1 MB-vs-10 MB upload body limit | **Fixed** | `f36b239` | single shared constant; framework + app limits locked |
+| M7 | CSP + frame-ancestors + other headers | **Partial (by design)** | `a2dfad4` | headers verified live; full script-CSP ships report-only — see note |
+| M5b | Rate-limit authenticated actions (import/generation/issue) | **Fixed** | `3d0c6fb` | three buckets, keyed correctly |
+| M3 | Re-auth before password change | **Fixed** | `59521ba` | current-password verified on a cookie-less client |
+| M4 | One password policy at 12 chars | **Fixed** | `59521ba` | `17` §C 9/9 |
+| L1 | Open redirect via `next=@evil.com` | **Fixed** | `997a88d` | `17` §D 12/12 (incl. the exact bypass) |
+
+**Two deliberate carry-forwards, not oversights:**
+- **M7 is intentionally partial.** The rendering-safe directives (`frame-ancestors`,
+  `form-action`, `base-uri`, `object-src`) are **enforced** — the clickjacking finding is
+  closed. A full `script-src` needs a per-request nonce via middleware, which Next's own docs
+  say *requires dynamic rendering*; this app deliberately prerenders `/`, `/login`, `/signup`
+  static. That trade-off gets its own decision, so the full policy ships as
+  `Content-Security-Policy-Report-Only` with a "TO FINISH THIS" note in `next.config.ts`.
+- **M4/M3 have a ⚠ HUMAN half.** The app-layer password floor is only enforceable if Supabase
+  Auth's own project-level minimum is raised to match — otherwise a direct `auth.signUp()` API
+  call bypasses it. Covered in the Supabase Auth settings list handed to the human.
+
+Two verify scripts were added and committed: `16-upload-safety.mjs` (22) and
+`17-app-hardening.mjs` (41). Both compile and import the **real** modules (via `tsc`) rather
+than reimplementing them, and fail rather than skip if that compile is unavailable. Full
+regression after all ten fixes, on a fresh production build: **190 + 22 + 41 + 19 all green.**
+
+The original findings, evidence, and severity reasoning are unchanged below.
+
+---
+
 ## 0. Headline
 
 **No CRITICAL finding. Nothing needed a stop-the-session escalation.**
