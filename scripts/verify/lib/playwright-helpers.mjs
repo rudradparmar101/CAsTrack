@@ -155,7 +155,7 @@ export async function restoreActorSession(browser, { baseURL, statePath }) {
 
 // Creates a client via the real staff UI (Clients list "Add Client" modal),
 // including one address row and one authorized-person row.
-export async function createClient(page, { name, businessType, gstin, address, person }) {
+export async function createClient(page, { name, businessType, gstin, email, address, person }) {
   await page.goto('/clients', { waitUntil: 'domcontentloaded' });
   // On an empty client list the empty-state CTA is ALSO labeled "Add Client",
   // in addition to the toolbar trigger — .first() picks the toolbar one.
@@ -165,6 +165,12 @@ export async function createClient(page, { name, businessType, gstin, address, p
   await fillLabeled(page, 'Legal Name', name);
   if (businessType) await selectLabeled(page, 'Business Type', businessType);
   if (gstin) await fillLabeled(page, 'GSTIN', gstin);
+  // Client-level contact email. Filled here (before "Add person") so the
+  // "Email" label is unambiguous — the person sub-form also has an "Email"
+  // field, but it isn't rendered until "Add person" is clicked below.
+  // A recorded client/person email is now REQUIRED to send a portal invite
+  // (app-layer audit M5a constrains invites to the client's saved contacts).
+  if (email) await fillLabeled(page, 'Email', email);
 
   if (address) {
     await page.getByRole('button', { name: 'Add address' }).click();

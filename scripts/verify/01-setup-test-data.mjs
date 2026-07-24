@@ -143,15 +143,20 @@ async function main() {
   await p1Page.getByText(data.e1.name, { exact: true }).first().waitFor({ timeout: 5000 });
   await p1Page.getByRole('button', { name: 'Done' }).click();
 
-  // Small grace period: the admin client's PostgREST connection can lag a
-  // beat behind the app's own connection under the Supabase pooler.
-  await new Promise((r) => setTimeout(r, 1000));
-  const { data: deptMember } = await admin
-    .from('department_members')
-    .select('*')
-    .eq('department_id', data.gstDeptId)
-    .eq('user_id', data.e1.id)
-    .maybeSingle();
+  // The admin client's PostgREST connection can lag a beat behind the app's
+  // own connection under the Supabase pooler, so poll rather than a single
+  // fixed-delay read (that single read was an intermittent false-negative).
+  let deptMember = null;
+  for (let i = 0; i < 8 && !deptMember; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const { data: row } = await admin
+      .from('department_members')
+      .select('*')
+      .eq('department_id', data.gstDeptId)
+      .eq('user_id', data.e1.id)
+      .maybeSingle();
+    deptMember = row;
+  }
   results.push(log('E1 added to GST department via Team UI', !!deptMember));
 
   // ---- E2: revoke clients.view via direct service-role insert ----
@@ -171,6 +176,10 @@ async function main() {
     name: clientAName,
     businessType: 'pvt_ltd',
     gstin: '27ABCDE1234F1Z5',
+    // Client A's contact email == the portal login email we invite below.
+    // Portal invites are constrained to the client's recorded contacts
+    // (app-layer audit M5a), so this must be a saved email on the client.
+    email: data.clientAUser.email,
     address: { line1: '12 MG Road', city: 'Mumbai', state: 'Maharashtra', stateCode: '27', pincode: '400001' },
     person: { name: 'Alok Alpha', designation: 'Director' },
   });
@@ -249,12 +258,13 @@ async function main() {
   await p1Page.goto(`/clients/${clientA.id}`, { waitUntil: 'domcontentloaded' });
   await p1Page.getByRole('button', { name: 'Invite to Portal' }).click();
   await p1Page.getByRole('heading', { name: 'Invite to Client Portal' }).waitFor({ timeout: 10000 });
-  const emailInput = p1Page.getByLabel("Client's email", { exact: true });
-  await emailInput.click();
-  await emailInput.fill('');
-  await emailInput.pressSequentially(data.clientAUser.email, { delay: 5 });
+  // M5a: the invite recipient is now a <Select> constrained to the client's
+  // recorded contacts (label "Send the invitation to"), not a free-text input.
+  // Client A's contact email was set to clientAUser.email above, so it's an option.
+  await p1Page.getByLabel('Send the invitation to').selectOption(data.clientAUser.email);
   await p1Page.getByRole('button', { name: 'Create invitation' }).click();
-  await p1Page.getByText('Invitation created.').waitFor({ timeout: 10000 });
+  // Success copy is now "Invitation created and an email has been sent to the client."
+  await p1Page.getByText(/Invitation created/).waitFor({ timeout: 10000 });
   const inviteUrlText = await p1Page.locator('code').first().textContent();
   data.clientAInviteUrl = inviteUrlText?.trim();
   results.push(log('Portal invite URL captured from UI modal', !!data.clientAInviteUrl?.includes('accept-invite'), data.clientAInviteUrl));

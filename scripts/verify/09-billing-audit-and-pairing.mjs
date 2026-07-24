@@ -84,7 +84,19 @@ async function ensureUser(admin, email, metadata) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
     if (error) throw new Error(`listUsers failed: ${error.message}`);
     const found = data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
-    if (found) return found.id;
+    if (found) {
+      // Re-runnable seeding: an account left behind by a prior run may carry a
+      // different password (or an unconfirmed email) than this run expects, which
+      // makes the later signInAs() fail with "Invalid login credentials". Reset
+      // both so seeding is deterministic regardless of prior state — this is the
+      // upsert-style guarantee the fixed-email pattern needs to actually hold.
+      await admin.auth.admin.updateUserById(found.id, {
+        password: PASSWORD,
+        email_confirm: true,
+        user_metadata: metadata,
+      });
+      return found.id;
+    }
     if (data.users.length < perPage) break;
     page += 1;
   }
