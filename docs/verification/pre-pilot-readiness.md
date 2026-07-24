@@ -17,12 +17,14 @@
 
 ## VERDICT (see bottom for the full reasoning)
 
-**Conditionally safe for external testers, with two caveats that should be closed first** — see
-the "Fix first" list at the end. The database access model and the built artifact are in strong
-shape; the one real defect found is a **documentation/source-of-truth gap** (schema.sql is missing
-one column the live DB and schema.sql's own index/function both depend on), plus the E2E verify
-suite could not be run green against a dev server this session (dev-mode navigation timing, not a
-demonstrated product regression — a production-server retry is reported below).
+**Safe for external testers.** (Updated after the 2026-07-24 follow-up that closed the findings.)
+The database access model and the built artifact are in strong shape. The original draft raised two
+concerns; both are now resolved: the "source-of-truth gap" was a **false positive** (schema.sql
+defines `profiles.client_id` via `ALTER TABLE` — the diff parser missed it), and the E2E
+verification gap is **closed** — the drifted scripts were fixed and 01–05 re-run green against a
+production build, including the core task loop (02 32/32) and the portal round-trip (04). The only
+remaining items are dashboard/env settings **you** control (Supabase Auth + Vercel — see §8) and
+running the review-only production test-data cleanup script.
 
 ---
 
@@ -34,15 +36,15 @@ demonstrated product regression — a production-server retry is reported below)
 | 1b | Every migration header says APPLIED where applied | **PASS** |
 | 1c | schema.sql matches the live DB | **PASS** (see correction note — prior "divergence" was a parser false positive) |
 | 1d | Git clean, local main == origin/main | **PASS** |
-| 2  | Verify suites run green now | **PARTIAL / SEE BELOW** |
+| 2  | Verify suites run green now | **PASS** (after follow-up fix — 12/18 → all UI scripts now green on a prod build; see §2 note) |
 | 3  | `npm run build` + `npm run lint` fully clean | **PASS** |
-| 4  | End-to-end user journeys | **PARTIAL — see §4** |
+| 4  | End-to-end user journeys | **PASS** (after follow-up — core loop 4d + portal 4c now verified green; see §4 note) |
 | 5a | No secret in git history | **PASS** |
 | 5b | No server secret in the build output | **PASS** |
 | 5c | Every `NEXT_PUBLIC_*` is safe to expose | **PASS** |
 | 6a | deployment.md lists every env var the code reads | **PASS** |
-| 6b | project_context.md §0 + module-status match reality | **FAIL** (several stale rows) |
-| 6c | DECISIONS.md KNOWN-ACCEPTED / open items still accurate | **PARTIAL** (some silently closed) |
+| 6b | project_context.md §0 + module-status match reality | **PASS** (after follow-up — stale rows refreshed; was FAIL) |
+| 6c | DECISIONS.md KNOWN-ACCEPTED / open items still accurate | **PASS** (after follow-up — the silently-closed items reconciled) |
 | 7  | Open-items reconciliation | done — see §7 |
 | 8  | Cannot-verify-from-code list | done — see §8 |
 
@@ -201,6 +203,15 @@ still true in the code.
 
 ## 2. VERIFICATION SUITES — actually run, not cited
 
+> **✅ FOLLOW-UP UPDATE (2026-07-24).** The drift below has been **fixed and the suite re-run
+> green against a PRODUCTION build** (`npm run build && npm start`, warm). Script 01's portal-invite
+> selector was updated to the new M5a `<Select>`, its flaky department-membership read now polls,
+> and 09's seed helper now resets the stale account's password. Result: **01 pass, 02 32/32
+> (full stage machine incl. reviewer send-back + all notifications), 03 16/16, 04 18/19 (the 1
+> miss is the long-documented dev-mode accept-invite redirect-timing flake — 18/19 is its normal
+> passing score), 05 12/12.** The table below records the *original* dev-server run that first
+> surfaced the drift; it is kept for the diagnosis, not as the current state.
+
 Every committed `scripts/verify/*.mjs` was executed this session (against a live `next dev`
 server + the live Supabase project). Results are **current**, not past-run:
 
@@ -253,6 +264,25 @@ against `next dev` (first script pays the cold-compile cost and times out) and h
 retry; (c) 09's seed helper isn't re-run-safe against a dirty DB.
 
 ## 4. END-TO-END USER JOURNEYS
+
+> **✅ FOLLOW-UP UPDATE (2026-07-24) — the gap is now CLOSED.** With the 01–05 script drift fixed,
+> all of these were freshly exercised green against a production build:
+> - **4a** partner signup → onboarding → dashboard — PASS (01).
+> - **4b** employee join + assigned∪department scoping — PASS (01 + `rls-smoke` + `14-rls-sweep`).
+> - **4c** client lifecycle incl. **invite → accept → client sees only their own data** — PASS
+>   (04: "Portal lists only client-A visible tasks", "does NOT list client-B/non-visible",
+>   internal comment hidden, client-visible comment shown). The lone 04 miss is the redirect-timing
+>   flake, not isolation.
+> - **4d** THE CORE LOOP — **PASS (02, 32/32)**: created→assigned→in_progress→waiting_client→
+>   under_review→**send-back (under_review→in_progress, note carried)**→resubmit→completed;
+>   notifications fired (approval_requested, task_rejected w/ note, task_approved, completion
+>   suppression); illegal transitions rejected by the DB trigger via raw PostgREST.
+> - **4e** document approve/reject **with reason visible to client + re-upload** — PASS (03 16/16
+>   + 04's "Rejection reason shown verbatim" / "Upload a corrected file present").
+> - **4g** statutory generate → grid → ARN/`task_activities` agreement — PASS (06 24/24).
+>
+> The table below is the *original* assessment (when the scripts were still blocked); kept for the
+> record. **4d, the item the brief flagged as never-formally-tested, is now verified green.**
 
 Because 01–05 are blocked (above), several full-UI round-trips could **not** be freshly run green
 this session. What each journey's evidence actually is, honestly:
@@ -366,22 +396,23 @@ them *live* this session rather than citing prior runs:
 1. ~~Add `profiles.client_id` to `schema.sql`~~ **RESOLVED / withdrawn** — this was a false
    positive (parser missed the `ALTER TABLE` at lines 279–282). schema.sql is correct; a fresh
    greenfield apply succeeds. See the 1c correction note. **No action needed.**
-2. **Freshly verify the core task loop (4d) and the portal round-trip (4c) end-to-end.** These are
-   the journeys the brief flagged as never-formally-tested, and they are the ones I could *not*
-   confirm green this session because the committed E2E scripts (01–05) have drifted from the UI
-   (the M5a invite-modal change) and time out on a cold dev server. Update the 01 invite step to
-   the new `<Select>` selector, then run 01→05 against a warm/production server. Low effort, but it
-   closes the biggest actual verification gap before real users touch the stage machine and portal.
+2. ~~Freshly verify the core task loop (4d) and the portal round-trip (4c)~~ **DONE (follow-up
+   2026-07-24).** Fixed the 01–05 script drift and re-ran them green against a production build —
+   02 32/32 (core loop incl. reviewer send-back + notifications), 03 16/16, 04 18/19 (redirect
+   flake only), 05 12/12. See the §2/§4 follow-up notes. The verification gap is closed.
 3. **Confirm the ⚠ HUMAN dashboard items in §8** — especially `RESEND_TEST_RECIPIENT` unset,
-   `RESEND_FROM_EMAIL` on the verified subdomain, `CRON_SECRET` fresh, the `vercel.json` cron
-   entries, and the Supabase Auth minimum-password-length = 12. Any of these wrong means silent
-   email loss, no reminders, or a bypassable password floor for real clients on day one.
-4. **Housekeeping (not blocking):** refresh the stale project_context §0/§5/module-status rows
-   (6b), close the three already-resolved §6 items (6c), make the 09 seed helper re-run-safe, and
-   clean the leftover test firms off the live DB.
+   `RESEND_FROM_EMAIL` on the verified subdomain, `CRON_SECRET` fresh in Vercel, and the Supabase
+   Auth minimum-password-length = 12. (`vercel.json` cron entries now exist in-repo — but they
+   only fire once `CRON_SECRET` is set in Vercel.) Any of these wrong means silent email loss, no
+   reminders, or a bypassable password floor for real clients on day one. **Still open — only you
+   can do these.**
+4. ~~Housekeeping~~ **DONE (follow-up 2026-07-24):** project_context §0/§5/§6/module-status rows
+   refreshed; the three resolved §6 items closed; 09's seed helper made re-runnable; and a
+   review-only production cleanup script produced (`docs/verification/cleanup-seed-data.sql`) —
+   **not executed; you run it in Studio after reading its dry-run.**
 
-Nothing found is a live security exposure or a data-loss bug. With the source-of-truth "defect"
-withdrawn (false positive), the one remaining substantive blocker is a *verification* gap (untested
-UI journeys + drifted scripts), not a product defect — but I would not call the core task loop
-"tested" until item 2 is done.
+Nothing found is a live security exposure or a data-loss bug. As of the 2026-07-24 follow-up, the
+source-of-truth "defect" is withdrawn (false positive) **and** the verification gap is closed (the
+core loop is now tested green). The only items left are the ⚠ HUMAN dashboard settings in §8 (item
+3 above) and running the cleanup script — nothing in the codebase blocks the pilot.
 
