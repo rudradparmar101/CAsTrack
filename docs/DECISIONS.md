@@ -1298,6 +1298,69 @@ environment-variable reference these point into.
 
 ---
 
+### 2026-07-24 — Accepted-as-designed items surfaced by the pre-pilot readiness pass (do NOT "fix")
+
+These four Supabase-advisor / log-noise items were reviewed during the pre-pilot readiness
+follow-up and are **deliberately accepted**. A future session must not "remediate" them — each
+has a specific reason, and the obvious fix for two of them would take the app down.
+
+- **The 2 Security Advisor ERRORS "Security Definer View" (`client_invoices`,
+  `client_invoice_items`) are INTENTIONAL.** They are the curated client-portal billing read
+  path from migrations 004/005: `/portal/billing` reads *only* through these `SECURITY DEFINER`
+  views, never the base `firm_invoices`/`firm_invoice_items` tables, so the view is the
+  tenant-isolation boundary itself (it filters to the caller's own client). This was
+  adversarially verified in `docs/verification/portal-isolation.md` §7/§8. The advisor flags any
+  definer view generically; here it is the design. Do not convert them to `SECURITY INVOKER`
+  (that would break the portal's read path) and do not "fix" the advisor error.
+
+- **The ~74 warnings "Public/Signed-in users can execute a SECURITY DEFINER function" are
+  architectural noise for this design — do NOT blanket-revoke EXECUTE.** Many of these functions
+  (`has_permission()`, `get_user_firm_id()`, `get_user_role()`, `is_firm_staff()`,
+  `can_access_document()`, …) are called *inside RLS policies*, which Postgres evaluates with the
+  querying user's own privileges. Revoking `EXECUTE` from `authenticated` would make every policy
+  that references them fail — i.e. take the entire app down. The correct mitigation was already
+  done in Phase 14.1/14.2: every `SECURITY DEFINER` function that takes a *caller-controlled
+  argument* was probed for cross-tenant leakage and given an in-body ownership/permission check
+  where needed (migrations 010/011 etc.); the argument-less context helpers resolve only the
+  caller's own `auth.uid()` and cannot leak. Executability by `authenticated` is required, not a
+  gap.
+
+- **The recurring Postgres log errors `duplicate key value violates unique constraint
+  "uq_statutory_task_per_period"` are the DOCUMENTED Phase 10 design, NOT a bug.** The statutory
+  generation engine does a plain `INSERT` and catches `23505` to mean "this (client,
+  compliance_type, period) was already generated" — chosen because supabase-js cannot target a
+  *partial* unique index via `.upsert({ onConflict })`. Every idempotent re-run (and the daily
+  cron) therefore logs one 23505 per already-existing task. **Known downside worth stating: this
+  is roughly 98% of the Postgres error log, and that volume can mask a genuine error hiding among
+  the noise.** Future improvement (do NOT implement now): pre-`SELECT` the existing
+  `(client, compliance_type, period)` combinations for the period and skip them before inserting,
+  keeping the `23505` catch only as the race-condition safety net — turning the common path
+  silent while preserving correctness. Deliberately deferred; not worth a change this close to
+  pilot.
+
+- **Legacy `anon`/`service_role` JWT keys stay ENABLED deliberately.** The app (every client via
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY`) and every `scripts/verify/*.mjs` script authenticate with the
+  legacy anon key; the server/cron/provisioning paths use the legacy service-role key. Disabling
+  the legacy keys in favour of the new publishable/secret key format would take `praxida.in` down
+  instantly. Migrating is a deliberate, staged cutover — mint the new keys, update every env var
+  (Vercel + `.env.local`) and every verify script, deploy, verify end-to-end, *then* disable the
+  legacy keys — not a dashboard toggle. **Revisit trigger:** do this as its own maintenance task
+  when there's a deploy window to verify against, or if Supabase announces a legacy-key
+  deprecation date — not opportunistically mid-feature.
+
+- **`handle_updated_at` "Function Search Path Mutable" (Advisor) — SKIP, no migration.**
+  Verified live: `handle_updated_at` is `SECURITY INVOKER` (`prosecdef = false`), and its body is
+  only `NEW.updated_at = now(); RETURN NEW;` — `now()` resolves from `pg_catalog` and cannot be
+  shadowed. The search-path-hijack risk the advisor warns about requires `SECURITY DEFINER`
+  context (an elevated function resolving an attacker-planted object); an invoker function runs as
+  the caller regardless, so a hijack gains nothing. It is the one function in the schema without
+  `SET search_path` precisely because it is the one trivial invoker trigger where it carries no
+  security meaning. A consistency-only `SET search_path = public` one-liner is possible but would
+  require a migration + Studio gate for zero security benefit — not warranted. Recommendation:
+  leave as-is; dismiss/acknowledge the advisor item.
+
+---
+
 ## See also
 - `project_context.md` §8 — the phase-indexed cumulative decisions table this log was
   backfilled from (kept as-is; this file is the same history reordered chronologically,
