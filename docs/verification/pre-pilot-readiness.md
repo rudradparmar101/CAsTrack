@@ -32,7 +32,7 @@ demonstrated product regression — a production-server retry is reported below)
 |---|---|---|
 | 1a | All migrations 001–019 applied to the live DB | **PASS** |
 | 1b | Every migration header says APPLIED where applied | **PASS** |
-| 1c | schema.sql matches the live DB | **FAIL** (1 real divergence: `profiles.client_id`) |
+| 1c | schema.sql matches the live DB | **PASS** (see correction note — prior "divergence" was a parser false positive) |
 | 1d | Git clean, local main == origin/main | **PASS** |
 | 2  | Verify suites run green now | **PARTIAL / SEE BELOW** |
 | 3  | `npm run build` + `npm run lint` fully clean | **PASS** |
@@ -83,7 +83,7 @@ headers (004, 005, 008) have already been corrected (each now says APPLIED, with
 that it "was stale until Phase 14.2's systemic audit caught it"). No file currently claims
 "NOT YET APPLIED" as its status. Nothing to fix.
 
-### 1c — schema.sql matches the live DB — **FAIL (one real divergence)**
+### 1c — schema.sql matches the live DB — **PASS**
 
 Enumerated every live object class via MCP and diffed against `schema.sql`:
 
@@ -95,27 +95,21 @@ Enumerated every live object class via MCP and diffed against `schema.sql`:
 | Policies (public+storage) | 156 | 156 | ✅ **identical md5 of sorted names** (`5bf3e423…`) |
 | Triggers | 33 | 33 | ✅ **identical md5 of name+table** (`1113628d…`) |
 | Event triggers (project) | 1 (`ensure_rls`) | 1 | ✅ (the other 6 live event triggers are Supabase platform defaults) |
-| Columns (all 35 tables) | — | — | ⚠️ **1 divergence** (below); all others match exactly |
+| Columns (all 35 tables) | — | — | ✅ **every live column defined in schema.sql, and vice versa** (ALTER-aware diff) |
 
-**THE DIVERGENCE — `profiles.client_id`:** the live `profiles` table has a `client_id uuid`
-(nullable, FK → `clients`) column. `schema.sql`'s `CREATE TABLE public.profiles` (lines 164–175)
-**does not declare it**. This is not cosmetic:
-
-- `schema.sql` **itself depends on the column it doesn't create** — line 772
-  `CREATE INDEX idx_profiles_client ON public.profiles(client_id) …` and line 843
-  `get_user_client_id()` = `SELECT client_id FROM public.profiles WHERE id = auth.uid()`.
-- So a fresh greenfield apply of `schema.sql` **would fail** at that `CREATE INDEX` (column
-  doesn't exist), and `get_user_client_id()` — **the function the entire client-portal isolation
-  model relies on** — references a column the table definition omits.
-- The **live DB is correct and functional** (the column exists live, so the portal works). The
-  defect is purely in `schema.sql` as the "greenfield source of truth": it is internally
-  inconsistent and cannot recreate the live schema.
-
-**Severity:** documentation / disaster-recovery integrity, **not** a live security or functional
-issue for the pilot. But it directly undercuts the "schema.sql is a truthful record of the live DB"
-claim (project_context.md §4.17) and is exactly the drift class this session was asked to hunt.
-**Fix:** add the `client_id uuid REFERENCES public.clients(id)` column line to `profiles` in
-`schema.sql` (no migration — the live DB already has it). Not fixed here (CHECK-only session).
+> **⚠️ CORRECTION (2026-07-24, follow-up session).** An earlier draft of this doc reported a
+> FAIL here — "`profiles.client_id` missing from schema.sql." **That was a false positive.**
+> `schema.sql` *does* define the column — via `ALTER TABLE public.profiles ADD COLUMN client_id …
+> ADD CONSTRAINT profiles_client_binding CHECK ((role='client_user') = (client_id IS NOT NULL))`
+> at **lines 279–282**, deliberately placed after the `clients` table is created to resolve the
+> circular FK (the `CREATE TABLE public.profiles` comment at line 163 even says so:
+> *"client_id is added by ALTER after clients exists"*). The original diff parser only scanned
+> `CREATE TABLE` blocks and missed the sole `ALTER … ADD COLUMN` in the file, so it wrongly
+> flagged the column as absent. A fresh greenfield apply of `schema.sql` succeeds: the ALTER (279)
+> runs before the index (772) and `get_user_client_id()` (843). Re-verified this session with an
+> **ALTER-aware** column diff across all 35 tables and by reading the live definition via MCP
+> (`client_id uuid`, FK→`clients` ON DELETE CASCADE, plus the `profiles_client_binding` CHECK) —
+> it matches `schema.sql` exactly. **No schema.sql change needed; no divergence exists.**
 
 ### 1d — Git clean, local == origin — **PASS**
 
@@ -317,7 +311,8 @@ Deduplicated across ROADMAP / project_context §6 / DECISIONS.md, with current s
 - §6 item 3 (invite links to server console) — **superseded** (Phase 11 Resend wiring).
 
 **New this session (not tracked anywhere):**
-- **`profiles.client_id` missing from `schema.sql`** (see 1c) — a source-of-truth defect.
+- ~~`profiles.client_id` missing from `schema.sql`~~ **Withdrawn — false positive** (see the 1c
+  correction). schema.sql defines it via `ALTER TABLE` (lines 279–282); no defect exists.
 
 ---
 
@@ -368,10 +363,9 @@ them *live* this session rather than citing prior runs:
 
 **What I would fix first, in order:**
 
-1. **Add `profiles.client_id` to `schema.sql`** (1c). It's a one-line doc fix, but until then your
-   "source of truth" can't recreate your database and is internally inconsistent around the exact
-   function (`get_user_client_id()`) that the client portal's isolation depends on. Highest
-   value-per-effort.
+1. ~~Add `profiles.client_id` to `schema.sql`~~ **RESOLVED / withdrawn** — this was a false
+   positive (parser missed the `ALTER TABLE` at lines 279–282). schema.sql is correct; a fresh
+   greenfield apply succeeds. See the 1c correction note. **No action needed.**
 2. **Freshly verify the core task loop (4d) and the portal round-trip (4c) end-to-end.** These are
    the journeys the brief flagged as never-formally-tested, and they are the ones I could *not*
    confirm green this session because the committed E2E scripts (01–05) have drifted from the UI
@@ -386,7 +380,8 @@ them *live* this session rather than citing prior runs:
    (6b), close the three already-resolved §6 items (6c), make the 09 seed helper re-run-safe, and
    clean the leftover test firms off the live DB.
 
-Nothing found is a live security exposure or a data-loss bug. The blockers are a doc/source-of-truth
-defect and a *verification* gap (untested UI journeys + drifted scripts), not a product defect —
-but I would not call the core task loop "tested" until item 2 is done.
+Nothing found is a live security exposure or a data-loss bug. With the source-of-truth "defect"
+withdrawn (false positive), the one remaining substantive blocker is a *verification* gap (untested
+UI journeys + drifted scripts), not a product defect — but I would not call the core task loop
+"tested" until item 2 is done.
 
